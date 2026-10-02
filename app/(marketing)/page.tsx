@@ -21,7 +21,6 @@ import { Faq } from "@/components/marketing/Faq";
 import { RotatingWord } from "@/components/marketing/RotatingWord";
 import { ProductFlowDemo } from "@/components/marketing/ProductFlowDemo";
 import { HomeHeroVisual } from "@/components/marketing/HomeHeroVisual";
-import { PricingSection } from "@/components/marketing/PricingSection";
 
 const highlights = [
   {
@@ -516,11 +515,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* Pricing Section on Home Page */}
-      <Reveal>
-        <PricingSection />
-      </Reveal>
 
       {/* Clean Accordion FAQ */}
       <section className="px-5 py-16 md:px-8 md:py-24 bg-[#fbfbf9]/40 border-t border-[#1f2528]/5">

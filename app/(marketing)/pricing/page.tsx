@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Check, HelpCircle, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PageTransition } from "@/components/marketing/PageTransition";
-import { PricingVisual } from "@/components/marketing/PricingVisual";
 
 const faqPricing = [
   {
@@ -99,53 +98,48 @@ export default function PricingPage() {
   return (
     <PageTransition>
       {/* Hero Header Section */}
-      <section className="marketing-page-hero px-5 pb-10 pt-[100px] md:px-8 md:pb-16 md:pt-[104px]">
-        <div className="mx-auto max-w-6xl grid gap-12 lg:grid-cols-[1.1fr_0.9fr] items-center text-left">
-          <div>
-            <p className="marketing-eyebrow">Pricing Plans</p>
-            <h1 className="marketing-display mt-5 max-w-4xl leading-tight">
-              Simple plans.
-              <br />
-              Serious results.
-            </h1>
-            <p className="mt-7 max-w-xl text-lg leading-relaxed text-[#4f5b62]">
-              Start free. Upgrade when you are ready to expand your reach. Clear billing, no surprises, cancel anytime.
-            </p>
-            
-            {/* Billing Cycle Switcher Toggle */}
-            <div className="mt-8 flex items-center gap-3">
-              <span className={`text-xs font-black uppercase tracking-wider transition-colors ${billingCycle === "monthly" ? "text-[#1f2528]" : "text-slate-400"}`}>
-                Monthly
-              </span>
-              <button
-                onClick={() => setBillingCycle(prev => prev === "monthly" ? "annually" : "monthly")}
-                className="w-12 h-6.5 rounded-full bg-slate-100 border border-slate-200 p-0.5 relative transition-colors focus:outline-none cursor-pointer"
-              >
-                <motion.div 
-                  layout
-                  className="h-5 w-5 rounded-full bg-[#2f7867]"
-                  style={{ float: billingCycle === "annually" ? "right" : "left" }}
-                />
-              </button>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-black uppercase tracking-wider transition-colors ${billingCycle === "annually" ? "text-[#1f2528]" : "text-slate-400"}`}>
-                  Annually
-                </span>
-                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#2f7867] tracking-wider animate-pulse">
-                  Save 20%
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="perspective-1000 hidden lg:block">
-            <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-              className="relative z-10 w-full"
+      <section className="marketing-page-hero px-5 pb-10 pt-[100px] md:px-8 md:pb-14 md:pt-[110px]">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="marketing-eyebrow">Pricing Plans</p>
+          <h1 className="marketing-display mt-5 leading-tight">
+            Simple plans. Serious results.
+          </h1>
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-[#4f5b62]">
+            Start free. Upgrade when you are ready to expand your reach. Clear billing, no surprises, cancel anytime.
+          </p>
+
+          {/* Billing Cycle Switcher Toggle */}
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <span
+              className={`text-xs font-black uppercase tracking-wider transition-colors ${
+                billingCycle === "monthly" ? "text-[#1f2528]" : "text-slate-400"
+              }`}
             >
-              <PricingVisual />
-            </motion.div>
+              Monthly
+            </span>
+            <button
+              onClick={() => setBillingCycle((prev) => (prev === "monthly" ? "annually" : "monthly"))}
+              className="w-12 h-6.5 rounded-full bg-slate-100 border border-slate-200 p-0.5 relative transition-colors focus:outline-none cursor-pointer"
+              aria-label="Toggle billing cycle"
+            >
+              <motion.div
+                layout
+                className="h-5 w-5 rounded-full bg-[#2f7867]"
+                style={{ float: billingCycle === "annually" ? "right" : "left" }}
+              />
+            </button>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-xs font-black uppercase tracking-wider transition-colors ${
+                  billingCycle === "annually" ? "text-[#1f2528]" : "text-slate-400"
+                }`}
+              >
+                Annually
+              </span>
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#2f7867] tracking-wider animate-pulse">
+                Save 20%
+              </span>
+            </div>
           </div>
         </div>
       </section>
