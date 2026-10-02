@@ -16,7 +16,7 @@ Instead of running heavy database polling every minute to check for due posts:
 ## 2. Key Files Created & Modified
 
 *   **[`lib/inngest/client.ts`](file:///C:/Users/HP/Desktop/abcdef/PostSync/lib/inngest/client.ts):** Inngest client initialization and `schedulePostWithInngest()` helper.
-*   **[`app/api/inngest/route.ts`](file:///C:/Users/HP/Desktop/abcdef/PostSync/app/api/inngest/route.ts):** Next.js App Router handlers (`GET`, `POST`, `PUT`) exposing `publishScheduledPost` and `hourlySafetyCheck`.
+*   **[`app/api/inngest/route.ts`](file:///C:/Users/HP/Desktop/abcdef/PostSync/app/api/inngest/route.ts):** Next.js App Router handlers (`GET`, `POST`, `PUT`) exposing `publishScheduledPost`.
 *   **[`scripts/inngest-https-proxy.js`](file:///C:/Users/HP/Desktop/abcdef/PostSync/scripts/inngest-https-proxy.js):** Local HTTP-to-HTTPS dev proxy to bypass Go self-signed SSL certificate errors when testing locally on `https://localhost:3000`.
 
 ---

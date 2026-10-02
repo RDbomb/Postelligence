@@ -87,7 +87,7 @@ export default function PricingPage() {
         "1,000 scheduled posts / month",
         "300 automated posts / month",
         "AI Studio calibration (50,000 words/mo)",
-        "Background automated cron publishing",
+        "Background automated event-driven publishing",
         "5 team workspaces limit"
       ]
     }

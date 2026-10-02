@@ -1,6 +1,6 @@
 # Postelligence
 
-A social media management dashboard that lets you write one post and publish it to multiple platforms simultaneously — LinkedIn, YouTube, Bluesky, Instagram, Facebook, Threads, and more.
+A social media management dashboard that lets you write one post and publish it to multiple platforms simultaneously â€” LinkedIn, YouTube, Bluesky, Instagram, Facebook, Threads, and more.
 
 Built with Next.js 14, Supabase, Tailwind CSS, and Recharts.
 
@@ -10,8 +10,8 @@ Built with Next.js 14, Supabase, Tailwind CSS, and Recharts.
 
 Before you begin, make sure you have the following installed:
 
-- **Node.js v20+** — [Download here](https://nodejs.org/)
-- **Yarn v1.22+** — Install with `npm install -g yarn`
+- **Node.js v20+** â€” [Download here](https://nodejs.org/)
+- **Yarn v1.22+** â€” Install with `npm install -g yarn`
 
 ---
 
@@ -23,7 +23,7 @@ Before you begin, make sure you have the following installed:
 yarn install
 ```
 
-This project uses Yarn as its package manager. Do not use `npm install` or `pnpm install` — they generate competing lockfiles that will drift from `yarn.lock`.
+This project uses Yarn as its package manager. Do not use `npm install` or `pnpm install` â€” they generate competing lockfiles that will drift from `yarn.lock`.
 
 ---
 
@@ -48,7 +48,7 @@ Copy the example env file and fill in your credentials:
 cp .env.example .env.local
 ```
 
-Open `.env.local` and replace each placeholder value with your actual credentials. The `.env.example` file lists all required variables with descriptions. You do not need to fill in every platform — only add credentials for platforms you intend to connect.
+Open `.env.local` and replace each placeholder value with your actual credentials. The `.env.example` file lists all required variables with descriptions. You do not need to fill in every platform â€” only add credentials for platforms you intend to connect.
 
 ---
 
@@ -122,15 +122,15 @@ npx supabase functions deploy bluesky-video-upload --project-ref YOUR_PROJECT_RE
 
 | Platform   | Publishing | Analytics        | Notes |
 |------------|-----------|------------------|-------|
-| LinkedIn   | ✅         | ⚠️ Partial        | Engagement requires `r_member_social` LinkedIn approval |
-| YouTube    | ✅         | ✅ Full           | Requires Google OAuth with YouTube Data API v3 |
-| Bluesky    | ✅         | ✅ Full           | Uses public API, no extra permissions needed |
-| Instagram  | ✅         | ✅ Full           | Requires Meta Business/Creator account |
-| Facebook   | ✅         | ⚠️ Partial        | Post analytics require Meta `pages_read_user_content` approval |
-| Threads    | ✅         | ✅ Full           | Requires Meta developer app |
-| Twitter/X  | 🚧 WIP     | ❌ Not yet        | Integration under development |
-| Pinterest  | ❌ Planned | ❌ Not yet        | Planned for a future release |
-| Reddit     | ❌ Planned | ❌ Not yet        | Awaiting developer approval |
+| LinkedIn   | âœ…         | âš ï¸ Partial        | Engagement requires `r_member_social` LinkedIn approval |
+| YouTube    | âœ…         | âœ… Full           | Requires Google OAuth with YouTube Data API v3 |
+| Bluesky    | âœ…         | âœ… Full           | Uses public API, no extra permissions needed |
+| Instagram  | âœ…         | âœ… Full           | Requires Meta Business/Creator account |
+| Facebook   | âœ…         | âš ï¸ Partial        | Post analytics require Meta `pages_read_user_content` approval |
+| Threads    | âœ…         | âœ… Full           | Requires Meta developer app |
+| Twitter/X  | ðŸš§ WIP     | âŒ Not yet        | Integration under development |
+| Pinterest  | âŒ Planned | âŒ Not yet        | Planned for a future release |
+| Reddit     | âŒ Planned | âŒ Not yet        | Awaiting developer approval |
 
 ---
 
@@ -143,7 +143,7 @@ Authentication is enforced at **two** layers, on purpose.
 Runs before rendering on every matched request and does two jobs:
 
 - **Refreshes the Supabase session.** `getUser()` revalidates the access token and rotates the auth cookies when it has expired. Without this, a signed-in user's session dies silently when the token lapses.
-- **Redirects optimistically** — signed-out visitors leaving the app shell go to `/login`; signed-in visitors hitting `/login` go to `/dashboard`.
+- **Redirects optimistically** â€” signed-out visitors leaving the app shell go to `/login`; signed-in visitors hitting `/login` go to `/dashboard`.
 
 Protected prefixes mirror the `app/(shell)/` segments. Deliberate exclusions:
 
@@ -151,7 +151,7 @@ Protected prefixes mirror the `app/(shell)/` segments. Deliberate exclusions:
 |---|---|
 | `/automation/action-completed` | Public landing page for token-authenticated external approval links sent over Discord/Telegram. Sits under the protected `/automation` prefix but must stay open. |
 | `/api/*` | Route handlers authenticate themselves and must return 401 JSON, not an HTML redirect. Keeps `/api/scheduler/run` (cron) and `/api/automation/external-approve` (token) reachable. |
-| `/auth/*` | OAuth callbacks — redirecting these breaks the code exchange. |
+| `/auth/*` | OAuth callbacks â€” redirecting these breaks the code exchange. |
 | `/admin` | Authenticates client-side against `sessionStorage`, not Supabase. |
 
 ### 2. `getUser()` in pages, layouts and route handlers
@@ -159,7 +159,7 @@ Protected prefixes mirror the `app/(shell)/` segments. Deliberate exclusions:
 These are **kept**, not replaced by the proxy. Two reasons:
 
 - A proxy is a single spoofable choke point. [CVE-2025-29927](https://nvd.nist.gov/vuln/detail/CVE-2025-29927) let a crafted `x-middleware-subrequest` header skip Next.js middleware entirely. If the proxy were the only gate, that bug would have exposed every page and API route.
-- In the App Router a **layout's guard does not stop its child page from executing** — they render in parallel. A page cannot rely on its layout for protection.
+- In the App Router a **layout's guard does not stop its child page from executing** â€” they render in parallel. A page cannot rely on its layout for protection.
 
 The rule: the proxy avoids rendering work and keeps tokens fresh; **authorisation lives next to the data it protects.**
 
@@ -171,7 +171,7 @@ Hooks are managed by [husky](https://typicode.github.io/husky/) and installed au
 
 | Hook | Runs | Blocks on |
 |---|---|---|
-| `pre-commit` | `lint-staged` → `eslint --fix` on staged files | any remaining ESLint **error** |
+| `pre-commit` | `lint-staged` â†’ `eslint --fix` on staged files | any remaining ESLint **error** |
 | `commit-msg` | `commitlint` | message not matching Conventional Commits |
 | `pre-push` | `eslint .` then `next build` (type-checks too) | any lint error or build/type failure |
 
@@ -184,7 +184,7 @@ type(optional scope): subject
 ```
 
 Allowed types: `feat`, `fix`, `refactor`, `perf`, `docs`, `style`, `test`, `build`, `ci`, `chore`, `revert`.
-Subject must be lower-case, non-empty, no trailing period; header ≤100 chars.
+Subject must be lower-case, non-empty, no trailing period; header â‰¤100 chars.
 
 ```bash
 # accepted
@@ -205,7 +205,7 @@ yarn lint:fix     # eslint with --fix
 yarn typecheck    # tsc --noEmit
 ```
 
-> **Bypassing hooks** (`--no-verify`) is discouraged — `pre-push` is the last gate before shared branches.
+> **Bypassing hooks** (`--no-verify`) is discouraged â€” `pre-push` is the last gate before shared branches.
 
 ---
 
@@ -230,42 +230,42 @@ yarn typecheck    # tsc --noEmit
 
 ```
 Postelligence/
-├── app/
-│   ├── page.tsx                        # Landing / login page
-│   ├── auth/                           # OAuth callbacks (Google + per platform)
-│   ├── dashboard/
-│   │   ├── page.tsx                    # Main dashboard (server component)
-│   │   ├── DashboardClient.tsx         # Interactive dashboard UI
-│   │   ├── DashboardShellClient.tsx    # Sidebar + navbar shell
-│   │   └── (shell)/                   # Sub-pages with shared layout
-│   │       ├── analytics/             # Analytics dashboard with charts
-│   │       ├── calendar/              # Scheduled post calendar
-│   │       ├── drafts/                # Draft management
-│   │       ├── library/               # Media library
-│   │       ├── integrations/          # Platform connections
-│   │       └── ai-studio/             # AI caption/hashtag tools
-│   └── api/
-│       ├── integrations/<platform>/   # connect / callback / disconnect per platform
-│       ├── posts/publish/             # Core multi-platform publish engine
-│       ├── analytics/refresh/         # Manual + background analytics cache refresh
-│       ├── media/                     # LinkedIn & YouTube media pre-upload
-│       ├── media-library/             # Media library CRUD
-│       ├── scheduled-posts/           # Scheduled post CRUD
-│       └── scheduler/run/             # Cron-triggered auto-publisher
-├── components/
-│   ├── ui/                            # Button, Badge, GlassPanel
-│   └── email-auth-form.tsx
-├── lib/
-│   ├── supabase/                      # Supabase client wrappers
-│   ├── integrations/                  # Per-platform OAuth + API helpers
-│   ├── analytics/
-│   │   ├── social-analytics.ts        # Live analytics fetcher (all platforms)
-│   │   └── analytics-cache.ts         # Supabase-backed cache (stale-while-revalidate)
-│   ├── scheduler/auto-publisher.ts    # Scheduled post publishing logic
-│   └── types.ts                       # Shared TypeScript types
-└── supabase/
-    ├── migrations/                    # SQL migration files
-    └── functions/                     # Deno edge functions
+â”œâ”€â”€ app/
+â”‚   â”œâ”€â”€ page.tsx                        # Landing / login page
+â”‚   â”œâ”€â”€ auth/                           # OAuth callbacks (Google + per platform)
+â”‚   â”œâ”€â”€ dashboard/
+â”‚   â”‚   â”œâ”€â”€ page.tsx                    # Main dashboard (server component)
+â”‚   â”‚   â”œâ”€â”€ DashboardClient.tsx         # Interactive dashboard UI
+â”‚   â”‚   â”œâ”€â”€ DashboardShellClient.tsx    # Sidebar + navbar shell
+â”‚   â”‚   â””â”€â”€ (shell)/                   # Sub-pages with shared layout
+â”‚   â”‚       â”œâ”€â”€ analytics/             # Analytics dashboard with charts
+â”‚   â”‚       â”œâ”€â”€ calendar/              # Scheduled post calendar
+â”‚   â”‚       â”œâ”€â”€ drafts/                # Draft management
+â”‚   â”‚       â”œâ”€â”€ library/               # Media library
+â”‚   â”‚       â”œâ”€â”€ integrations/          # Platform connections
+â”‚   â”‚       â””â”€â”€ ai-studio/             # AI caption/hashtag tools
+â”‚   â””â”€â”€ api/
+â”‚       â”œâ”€â”€ integrations/<platform>/   # connect / callback / disconnect per platform
+â”‚       â”œâ”€â”€ posts/publish/             # Core multi-platform publish engine
+â”‚       â”œâ”€â”€ analytics/refresh/         # Manual + background analytics cache refresh
+â”‚       â”œâ”€â”€ media/                     # LinkedIn & YouTube media pre-upload
+â”‚       â”œâ”€â”€ media-library/             # Media library CRUD
+â”‚       â”œâ”€â”€ scheduled-posts/           # Scheduled post CRUD
+â”‚       â””â”€â”€ scheduler/run/             # Cron-triggered auto-publisher
+â”œâ”€â”€ components/
+â”‚   â”œâ”€â”€ ui/                            # Button, Badge, GlassPanel
+â”‚   â””â”€â”€ email-auth-form.tsx
+â”œâ”€â”€ lib/
+â”‚   â”œâ”€â”€ supabase/                      # Supabase client wrappers
+â”‚   â”œâ”€â”€ integrations/                  # Per-platform OAuth + API helpers
+â”‚   â”œâ”€â”€ analytics/
+â”‚   â”‚   â”œâ”€â”€ social-analytics.ts        # Live analytics fetcher (all platforms)
+â”‚   â”‚   â””â”€â”€ analytics-cache.ts         # Supabase-backed cache (stale-while-revalidate)
+â”‚   â”œâ”€â”€ scheduler/auto-publisher.ts    # Scheduled post publishing logic
+â”‚   â””â”€â”€ types.ts                       # Shared TypeScript types
+â””â”€â”€ supabase/
+    â”œâ”€â”€ migrations/                    # SQL migration files
+    â””â”€â”€ functions/                     # Deno edge functions
 ```
 
 ---

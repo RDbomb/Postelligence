@@ -3,10 +3,12 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseJsonBody } from "@/lib/validation/http";
 import { emailAddress, httpUrl, platformId } from "@/lib/validation/schemas";
+import { scheduleNextAutomationSlot } from "@/lib/automation/engine";
+import { cancelAutomationLoop } from "@/lib/inngest/client";
 
 /**
  * Every field is optional because the handler applies its own `|| default` for
- * each one and the row has a DB default for every column — an absent field means
+ * each one and the row has a DB default for every column â€” an absent field means
  * "use the default", exactly as before.
  *
  * `categories` is an enum rather than a bounded string: `automation/trigger`

@@ -19,7 +19,7 @@ export const maxDuration = 60; // Allow execution to take up to 60 seconds
  * either. Only the Automation page's "test run" sends both.
  *
  * `user_id` selects which account the run impersonates, so it must be a
- * well-formed ID before it reaches `getUserById` — note the handler only honours
+ * well-formed ID before it reaches `getUserById` â€” note the handler only honours
  * it at all when the caller already presented the service-role key.
  * `test` keeps its strict "true" comparison rather than becoming a loose boolean,
  * so `?test=1` does not newly start bypassing the schedule-time check.
@@ -175,65 +175,9 @@ async function triggerAutomation(req: NextRequest) {
   let supabase = await createClient();
   let user = null;
 
-  // 1. Check Global Scheduler Tick (Supabase pg_cron or Vercel cron hitting without a user session / specific user query)
+  // Global cron polling was replaced by Inngest event-driven loops.
   if (isServiceRole && !req.headers.get("X-User-Id") && !queryUserId) {
-    const baseClient = createBaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } }
-    );
-
-    // Fetch all active automation configurations
-    const { data: allSettings, error: allErr } = await baseClient
-      .from("automation_settings")
-      .select("*")
-      .eq("is_enabled", true);
-
-    if (allErr) {
-      return NextResponse.json({ error: `Failed to fetch active settings: ${allErr.message}` }, { status: 500 });
-    }
-
-    const results: GlobalTickResult[] = [];
-    const evaluationTime = new Date();
-    const promises: Promise<void>[] = [];
-
-    const activeSettings: AutomationSettings[] = allSettings || [];
-
-    for (const settings of activeSettings) {
-      const times: string[] = settings.post_times || [settings.post_time || "09:00:00"];
-      for (const timeStr of times) {
-        const targetTime = getNextPostTimeUTC(timeStr);
-        const triggerTime = new Date(targetTime.getTime() - 10 * 60000);
-        
-        const isSameMinute = 
-          evaluationTime.getUTCFullYear() === triggerTime.getUTCFullYear() &&
-          evaluationTime.getUTCMonth() === triggerTime.getUTCMonth() &&
-          evaluationTime.getUTCDate() === triggerTime.getUTCDate() &&
-          evaluationTime.getUTCHours() === triggerTime.getUTCHours() &&
-          evaluationTime.getUTCMinutes() === triggerTime.getUTCMinutes();
-
-        if (isSameMinute) {
-          if (isScheduleActiveOnDay(targetTime, settings)) {
-            promises.push((async () => {
-              try {
-                // Fetch user's registered email to fallback on
-                const { data: { user: dbUser } } = await baseClient.auth.admin.getUserById(settings.user_id);
-                const email = dbUser?.email || "";
-                
-                const runRes = await runAutomationForUser(baseClient, settings.user_id, settings, email, req.nextUrl.origin, timeStr);
-                results.push({ user_id: settings.user_id, success: true, response: runRes, timeSlot: timeStr });
-              } catch (e: unknown) {
-                results.push({ user_id: settings.user_id, success: false, error: errorMessage(e, String(e)), timeSlot: timeStr });
-              }
-            })());
-          }
-        }
-      }
-    }
-
-    await Promise.all(promises);
-
-    return NextResponse.json({ message: "Global automation cron completed", results });
+    return NextResponse.json({ message: "Global cron polling has been replaced by Inngest event-driven loops." });
   }
 
   // 2. Resolve Single User Context (Test run or targeted bypass calls)
@@ -324,7 +268,7 @@ function cleanCaption(text: string): string {
   // 2. Remove any other mentions of Powered by Pollinations or Ad footers
   cleaned = cleaned.replace(/(?:\r?\n)*Powered by Pollinations\.AI[\s\S]*/gi, "");
   cleaned = cleaned.replace(/(?:\r?\n)*\*\*Support Pollinations\.AI\*\*[\s\S]*/gi, "");
-  cleaned = cleaned.replace(/(?:\r?\n)*🌸\s*\*\*Ad\*\*\s*🌸[\s\S]*/gi, "");
+  cleaned = cleaned.replace(/(?:\r?\n)*ðŸŒ¸\s*\*\*Ad\*\*\s*ðŸŒ¸[\s\S]*/gi, "");
   
   // 3. Remove trailing/leading quotes or markdown code blocks if the LLM returned them
   cleaned = cleaned.replace(/^["'`\s]+|["'`\s]+$/g, "").trim();
@@ -343,14 +287,14 @@ function getTargetCaptionBand(platforms: string[]): { min: number; max: number; 
     .filter((rule): rule is PlatformComposeRule => Boolean(rule));
 
   // Fall back to Instagram's limit if none of the selected platforms have a
-  // known rule (shouldn't normally happen — automation's platform picker
+  // known rule (shouldn't normally happen â€” automation's platform picker
   // only offers platforms that exist in PLATFORM_COMPOSE_RULES).
   const tightestRule = limits.length
     ? limits.reduce((a, b) => (b.captionLimit < a.captionLimit ? b : a))
     : PLATFORM_COMPOSE_RULES.instagram;
 
   const hardCap = tightestRule.captionLimit;
-  // Aim for a normal-length social caption that comfortably fits — never
+  // Aim for a normal-length social caption that comfortably fits â€” never
   // stretch all the way to the limit just because a generous platform
   // (Facebook, YouTube) is also selected.
   const max = Math.max(120, Math.min(hardCap - 10, 600));
@@ -375,7 +319,7 @@ function ensureCharacterLimit(text: string, band: { min: number; max: number; ha
     ];
     let paddingIndex = 0;
     while (cleaned.length < min && paddingIndex < extraCTAs.length) {
-      // Never pad past the hard cap even while reaching for the minimum —
+      // Never pad past the hard cap even while reaching for the minimum â€”
       // a short Bluesky-safe caption should stay short, not get pushed
       // over 300 chars trying to hit a generic minimum.
       if (cleaned.length + extraCTAs[paddingIndex].length > hardCap) break;
@@ -409,7 +353,7 @@ function ensureCharacterLimit(text: string, band: { min: number; max: number; ha
     cleaned = cleaned.slice(0, cutIndex).trim();
   }
 
-  // Absolute safety net regardless of the above — never exceed the
+  // Absolute safety net regardless of the above â€” never exceed the
   // tightest selected platform's real hard limit.
   if (cleaned.length > hardCap) {
     cleaned = cleaned.slice(0, hardCap).trim();
@@ -667,7 +611,7 @@ async function runAutomationForUser(
 
   const variationSeed = `${userId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   // Platform-aware target: same rules Compose uses (lib/compose/platform-rules.ts),
-  // applied to whichever platforms this automation run actually targets —
+  // applied to whichever platforms this automation run actually targets â€”
   // so a run that includes Bluesky writes short, and a LinkedIn/Facebook-only
   // run isn't needlessly capped down to Bluesky-length.
   const captionBand = getTargetCaptionBand(platforms);
