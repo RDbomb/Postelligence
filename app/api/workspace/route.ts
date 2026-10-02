@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity, WorkspaceActions } from "@/lib/workspace/activity-logger";
 import { parseJsonBody } from "@/lib/validation/http";
 import { nonEmptyString } from "@/lib/validation/schemas";
+import { getUserEntitlements } from "@/lib/subscriptions/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "You are already a member of a workspace. Leave it before creating a new one." },
       { status: 400 }
+    );
+  }
+
+  // Check workspace creation entitlements
+  const { entitlements } = await getUserEntitlements(user.id);
+  if (!entitlements.canAccessTeamWorkspaces || entitlements.maxWorkspaces <= 0) {
+    return NextResponse.json(
+      {
+        error: "Team Workspaces require a Pro or Plus subscription. Please upgrade to create a workspace.",
+        code: "FEATURE_LOCKED",
+        feature: "canAccessTeamWorkspaces",
+      },
+      { status: 403 }
+    );
+  }
+
+  // Check how many workspaces the user already owns
+  const { count } = await supabase
+    .from("workspaces")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", user.id);
+
+  if ((count || 0) >= entitlements.maxWorkspaces) {
+    return NextResponse.json(
+      {
+        error: `You have reached the workspace limit (${entitlements.maxWorkspaces}) for the ${entitlements.name} plan.`,
+        code: "QUOTA_EXCEEDED",
+        metric: "workspaces",
+        limit: entitlements.maxWorkspaces,
+      },
+      { status: 403 }
     );
   }
 

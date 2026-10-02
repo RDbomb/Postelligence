@@ -6,6 +6,7 @@ import { parseJsonBody, parseSearchParams } from "@/lib/validation/http";
 import { httpUrl, isoDateTime, platformId, uuid } from "@/lib/validation/schemas";
 import type { WorkspaceRole } from "@/types";
 import { schedulePostWithInngest } from "@/lib/inngest/client";
+import { getUserEntitlements, incrementUsage } from "@/lib/subscriptions/entitlements";
 
 const ListQuery = z.object({
   workspace_id: uuid.optional(),
@@ -98,6 +99,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Enforce tier quota for monthly scheduled posts
+  const { entitlements, usage } = await getUserEntitlements(user.id);
+  if (usage.scheduled_posts_count >= entitlements.maxScheduledPostsPerMonth) {
+    return NextResponse.json(
+      {
+        error: `Monthly quota of ${entitlements.maxScheduledPostsPerMonth} scheduled posts reached for ${entitlements.name} plan. Please upgrade to schedule more posts.`,
+        code: "QUOTA_EXCEEDED",
+        metric: "scheduled_posts",
+        limit: entitlements.maxScheduledPostsPerMonth,
+        current: usage.scheduled_posts_count,
+      },
+      { status: 403 }
+    );
+  }
+
   const { data, error } = await supabase
     .from("scheduled_posts")
     .insert({
@@ -117,6 +133,9 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Increment usage quota
+  await incrementUsage(user.id, "scheduled_posts", 1);
 
   // Dispatch event to Inngest to sleep until scheduled_time and auto-publish
   if (data?.scheduled_time) {

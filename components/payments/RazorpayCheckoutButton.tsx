@@ -85,6 +85,8 @@ export interface RazorpayCheckoutButtonProps
   /** Title shown in the Checkout modal. */
   name?: string;
   description?: string;
+  /** Desired subscription tier to activate upon payment verification. Defaults to 'pro' or 'plus' based on amount. */
+  tier?: "pro" | "plus";
   /** Optional prefill for the payer's details. */
   prefill?: { name?: string; email?: string; contact?: string };
   children?: React.ReactNode;
@@ -97,6 +99,7 @@ export function RazorpayCheckoutButton({
   currency = "INR",
   name = "PostSync",
   description,
+  tier,
   prefill,
   children = "Pay now",
   onSuccess,
@@ -153,10 +156,11 @@ export function RazorpayCheckoutButton({
         handler: async (response) => {
           // 3. Verify the signature server-side before treating it as paid.
           try {
+            const targetTier = tier || (amount >= 300000 ? "plus" : "pro");
             const verifyRes = await fetch("/api/payments/verify-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(response),
+              body: JSON.stringify({ ...response, tier: targetTier }),
             });
             const verifyData = await verifyRes.json();
             if (!verifyRes.ok || !verifyData.verified) {

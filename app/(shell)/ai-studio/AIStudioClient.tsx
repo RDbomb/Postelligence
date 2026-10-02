@@ -25,6 +25,7 @@ import {
   TrendingUp,
   Compass,
 } from "lucide-react";
+import { FeatureGate } from "@/components/billing/FeatureGate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -501,6 +502,7 @@ export default function AIStudioClient({ user }: { user: { email?: string | null
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
+        <FeatureGate feature="canAccessAiStudio" featureName="AI Studio" requiredTier="pro">
         {/* Tab switcher */}
         <div className="mb-6 flex gap-2">
           <button
@@ -1275,6 +1277,7 @@ export default function AIStudioClient({ user }: { user: { email?: string | null
             </motion.div>
           )}
         </AnimatePresence>
+        </FeatureGate>
       </div>
     </div>
   );

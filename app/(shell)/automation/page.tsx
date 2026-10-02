@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/require-user";
 import AutomationClient, { type AutomationLog } from "./AutomationClient";
+import { FeatureGate } from "@/components/billing/FeatureGate";
 
 export const metadata: Metadata = {
   title: "Automation",
   description: "Rules that publish and schedule on your behalf."
 };
-
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +42,19 @@ export default async function AutomationPage() {
     .order("created_at", { ascending: false });
 
   return (
-    <AutomationClient
-      user={user}
-      initialSettings={initialSettings}
-      initialLogs={(logs as AutomationLog[] | null) ?? []}
-    />
+    <div className="p-4 sm:p-6 lg:p-8">
+      <FeatureGate
+        feature="canAccessAutomation"
+        featureName="Content Automation"
+        requiredTier="pro"
+        description="Automate trend discovery, AI caption writing, image generation, and multi-platform publishing hands-free on your custom schedule."
+      >
+        <AutomationClient
+          user={user}
+          initialSettings={initialSettings}
+          initialLogs={(logs as AutomationLog[] | null) ?? []}
+        />
+      </FeatureGate>
+    </div>
   );
 }

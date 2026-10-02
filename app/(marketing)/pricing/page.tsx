@@ -50,47 +50,50 @@ export default function PricingPage() {
   const plans = [
     {
       name: "Starter",
-      description: "Perfect for solo creators starting out.",
+      description: "Essential social publishing for solo creators getting started.",
       cta: "Get started free",
       featured: false,
       features: [
-        "4 connected platforms limit",
+        "Up to 4 connected social accounts",
         "10 scheduled posts / month",
-        "Basic AI Composer assist",
-        "Basic channel analytics"
-      ]
+        "1,000 AI words / month",
+        "Personal media library",
+        "7-day analytics retention",
+        "Standard community support",
+      ],
     },
     {
       name: "Pro",
-      description: "For creators publishing consistently with specific network limits.",
+      description: "For active founders and creators publishing consistently across channels.",
       cta: "Upgrade to Pro",
       featured: true,
       features: [
-        "Everything in Starter",
-        "8 connected platforms limit",
+        "Up to 8 connected social accounts",
         "150 scheduled posts / month",
         "50 automated posts / month",
-        "AI Studio calibration (5,000 words/mo)",
-        "Advanced performance analytics",
-        "2 team workspaces limit",
-        "Priority developer support"
-      ]
+        "AI Studio (10,000 words + 25 AI images / mo)",
+        "Content Automation with Discord review",
+        "1 Team Workspace (up to 3 members)",
+        "90-day performance analytics",
+        "Priority developer support",
+      ],
     },
     {
       name: "Plus",
-      description: "Built for growing creator teams needing advanced automation.",
+      description: "Maximum power and unlimited scale for brands, agencies, and teams.",
       cta: "Upgrade to Plus",
       featured: false,
       features: [
-        "Everything in Pro",
-        "All available platforms",
+        "Unlimited connected accounts (All platforms)",
         "1,000 scheduled posts / month",
         "300 automated posts / month",
-        "AI Studio calibration (50,000 words/mo)",
-        "Background automated event-driven publishing",
-        "5 team workspaces limit"
-      ]
-    }
+        "Full AI Studio (50,000 words + 150 AI images / mo)",
+        "Background event-driven automated loop",
+        "5 Team Workspaces (unlimited collaborators)",
+        "365-day analytics retention & export reports",
+        "Dedicated priority VIP support",
+      ],
+    },
   ];
 
   return (

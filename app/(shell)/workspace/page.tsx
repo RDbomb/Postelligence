@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/require-user";
 import { redirect } from "next/navigation";
 import WorkspaceSetupClient from "./WorkspaceSetupClient";
+import { FeatureGate } from "@/components/billing/FeatureGate";
 
 export const metadata: Metadata = {
   title: "Workspace",
   description: "Manage your shared workspace."
 };
-
 
 export default async function WorkspacePage() {
   const { supabase, user } = await requireUser();
@@ -21,5 +21,16 @@ export default async function WorkspacePage() {
 
   if (member) redirect("/team");
 
-  return <WorkspaceSetupClient />;
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
+      <FeatureGate
+        feature="canAccessTeamWorkspaces"
+        featureName="Team Workspaces"
+        requiredTier="pro"
+        description="Collaborate with team members, manage brand accounts collectively, and establish structured review workflows."
+      >
+        <WorkspaceSetupClient />
+      </FeatureGate>
+    </div>
+  );
 }

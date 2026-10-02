@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseJsonBody } from "@/lib/validation/http";
 import { generateWithGeminiCascade } from "@/lib/gemini";
+import { getUserEntitlements, incrementUsage } from "@/lib/subscriptions/entitlements";
 
 export const maxDuration = 60; // Allow up to 60 seconds execution time to prevent timeouts
 
@@ -363,6 +364,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Enforce AI Studio access and monthly words quota
+    const { entitlements, usage } = await getUserEntitlements(user.id);
+    if (!entitlements.canAccessAiStudio) {
+      return NextResponse.json(
+        {
+          error: "AI Studio requires a Pro or Plus subscription. Please upgrade your account to generate AI content.",
+          code: "FEATURE_LOCKED",
+          feature: "canAccessAiStudio",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (usage.ai_words_generated >= entitlements.maxAiWordsPerMonth) {
+      return NextResponse.json(
+        {
+          error: `Monthly quota of ${entitlements.maxAiWordsPerMonth.toLocaleString()} AI words reached for ${entitlements.name} plan. Please upgrade to generate more.`,
+          code: "QUOTA_EXCEEDED",
+          metric: "ai_words",
+          limit: entitlements.maxAiWordsPerMonth,
+          current: usage.ai_words_generated,
+        },
+        { status: 403 }
+      );
+    }
+
     const parsed = await parseJsonBody(req, AIGenerateBody);
     if (!parsed.success) return parsed.response;
     const body: AIGenerateRequest = parsed.data;
@@ -592,6 +619,9 @@ Return ONLY a valid JSON array of ${headlines.length} strings (the explanations)
           ];
         }
 
+        // Increment approximate words for batch trends generation
+        await incrementUsage(user.id, "ai_words", 150);
+
         return NextResponse.json({ result: parsed, mode });
       } catch (err) {
         console.error("Trends list builder error:", err);
@@ -615,6 +645,10 @@ Return ONLY a valid JSON array of ${headlines.length} strings (the explanations)
     if (mode === "trends-post") {
       resultText = ensureCharacterLimit(resultText);
     }
+
+    // Increment generated words in user usage
+    const words = resultText.trim().split(/\s+/).filter(Boolean).length;
+    await incrementUsage(user.id, "ai_words", Math.max(1, words));
 
     return NextResponse.json({ result: resultText, mode });
   } catch (err) {

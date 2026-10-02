@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Save, Upload, RotateCcw, X, Crop } from "lucide-react";
+import { Check, Loader2, Save, Upload, RotateCcw, X, Crop, Sparkles, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RazorpayCheckoutButton } from "@/components/payments/RazorpayCheckoutButton";
+import { PlanBadge } from "@/components/billing/PlanBadge";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
@@ -95,6 +96,47 @@ export default function SettingsClient({ initialDefaultPlatforms, initialUser }:
 
   // Billing
   const [paymentResult, setPaymentResult] = useState<string | null>(null);
+  const [subData, setSubData] = useState<{
+    tier: string;
+    subscription: {
+      status: string;
+      billing_type: string;
+      current_period_end: string | null;
+    };
+    entitlements: {
+      name: string;
+      maxScheduledPostsPerMonth: number;
+      maxAiWordsPerMonth: number;
+      maxAiImagesPerMonth: number;
+      maxAutomatedPostsPerMonth: number;
+      maxConnectedPlatforms: number;
+      maxWorkspaces: number;
+    };
+    usage: {
+      scheduled_posts_count: number;
+      automated_posts_count: number;
+      ai_words_generated: number;
+      ai_images_generated: number;
+    };
+  } | null>(null);
+  const [loadingSub, setLoadingSub] = useState(true);
+
+  useEffect(() => {
+    async function fetchSub() {
+      try {
+        const res = await fetch("/api/subscriptions/current");
+        if (res.ok) {
+          const data = await res.json();
+          setSubData(data);
+        }
+      } catch (err) {
+        console.error("Failed to load subscription data", err);
+      } finally {
+        setLoadingSub(false);
+      }
+    }
+    fetchSub();
+  }, []);
 
   // Profile details
   const [fullName, setFullName] = useState(initialUser?.user_metadata?.full_name || initialUser?.user_metadata?.name || "");
@@ -583,34 +625,172 @@ export default function SettingsClient({ initialDefaultPlatforms, initialUser }:
             </div>
           </div>
 
-          {/* Billing / Test Payment Card */}
+          {/* Billing & Subscription Card */}
           <div className="rounded-2xl border border-[#1f2528]/10 bg-white p-6 shadow-[0_8px_32px_rgba(31,37,40,0.06)]">
-            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
               <div>
-                <h2 className="text-lg font-black text-[#1f2528]">Billing</h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Upgrade to the Pro plan. Payments are processed securely by Razorpay.
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-black text-[#1f2528]">Subscription & Billing</h2>
+                  <PlanBadge tier={subData?.tier || "starter"} size="md" />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Manage your subscription tier, monthly usage quotas, and account limits.
                 </p>
               </div>
-              <span className="rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600">
-                ₹500 / mo
-              </span>
+
+              {subData?.subscription?.billing_type === "lifetime" ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-700">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Lifetime VIP Access
+                </span>
+              ) : subData?.tier && subData.tier !== "starter" ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-bold text-slate-700">
+                  Active Subscription
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-bold text-slate-500">
+                  Starter Plan
+                </span>
+              )}
             </div>
 
-            <RazorpayCheckoutButton
-              amount={50000}
-              name="PostSync Pro"
-              description="PostSync Pro — monthly subscription"
-              prefill={{
-                name: initialUser?.user_metadata?.full_name,
-                email: initialUser?.email,
-              }}
-              variant="primary"
-              className="px-6 py-2.5"
-              onSuccess={(r) => setPaymentResult(`Payment successful — ${r.payment_id}`)}
-            >
-              Upgrade to Pro — ₹500
-            </RazorpayCheckoutButton>
+            {/* Monthly Usage Counters */}
+            <div className="mb-6 rounded-xl border border-slate-100 bg-[#f8faf9] p-5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-4">
+                Monthly Usage & Limits ({subData?.entitlements?.name || "Starter"} Tier)
+              </h3>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                {/* Scheduled Posts */}
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-slate-600">Scheduled Posts</span>
+                    <span className="text-[#1f2528]">
+                      {subData?.usage?.scheduled_posts_count || 0} / {subData?.entitlements?.maxScheduledPostsPerMonth || 10}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full bg-[#2f7867] transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((subData?.usage?.scheduled_posts_count || 0) /
+                              (subData?.entitlements?.maxScheduledPostsPerMonth || 10)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* AI Words */}
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-slate-600">AI Words</span>
+                    <span className="text-[#1f2528]">
+                      {(subData?.usage?.ai_words_generated || 0).toLocaleString()} /{" "}
+                      {(subData?.entitlements?.maxAiWordsPerMonth || 1000).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full bg-violet-600 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((subData?.usage?.ai_words_generated || 0) /
+                              (subData?.entitlements?.maxAiWordsPerMonth || 1000)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* AI Images */}
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-slate-600">AI Images</span>
+                    <span className="text-[#1f2528]">
+                      {subData?.usage?.ai_images_generated || 0} / {subData?.entitlements?.maxAiImagesPerMonth || 0}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full bg-fuchsia-600 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((subData?.usage?.ai_images_generated || 0) /
+                              Math.max(1, subData?.entitlements?.maxAiImagesPerMonth || 1)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Plan Actions & Upgrades */}
+            {subData?.tier === "plus" ? (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 text-center">
+                <p className="text-sm font-bold text-emerald-800">
+                  🎉 You are on the Plus / Agency tier with maximum capabilities and unlimited platform access.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-3">
+                {subData?.tier !== "pro" && (
+                  <RazorpayCheckoutButton
+                    amount={149900}
+                    name="PostSync Pro"
+                    description="PostSync Pro — monthly subscription"
+                    tier="pro"
+                    prefill={{
+                      name: initialUser?.user_metadata?.full_name,
+                      email: initialUser?.email,
+                    }}
+                    variant="outline"
+                    className="flex-1 py-3 font-bold"
+                    onSuccess={(r) => {
+                      setPaymentResult(`Pro upgrade successful — ${r.payment_id}`);
+                      window.location.reload();
+                    }}
+                  >
+                    <Sparkles className="h-4 w-4 text-[#2f7867]" />
+                    Upgrade to Pro — ₹1,499 / mo
+                  </RazorpayCheckoutButton>
+                )}
+
+                <RazorpayCheckoutButton
+                  amount={399900}
+                  name="PostSync Plus"
+                  description="PostSync Plus / Agency — monthly subscription"
+                  tier="plus"
+                  prefill={{
+                    name: initialUser?.user_metadata?.full_name,
+                    email: initialUser?.email,
+                  }}
+                  variant="primary"
+                  className="flex-1 py-3 font-bold"
+                  onSuccess={(r) => {
+                    setPaymentResult(`Plus upgrade successful — ${r.payment_id}`);
+                    window.location.reload();
+                  }}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Upgrade to Plus — ₹3,999 / mo
+                </RazorpayCheckoutButton>
+              </div>
+            )}
 
             {paymentResult && (
               <p className="mt-3 flex items-center gap-1.5 text-sm font-bold text-[#2f7867]">

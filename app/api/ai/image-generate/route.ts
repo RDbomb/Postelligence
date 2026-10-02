@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseJsonBody } from "@/lib/validation/http";
 import { createHash } from "crypto";
+import { getUserEntitlements, incrementUsage } from "@/lib/subscriptions/entitlements";
 
 export const maxDuration = 60; // Allow up to 60 seconds execution time to prevent timeouts on cold GPU starts
 
@@ -130,6 +131,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Enforce AI image generation entitlement and monthly quota
+    const { entitlements, usage } = await getUserEntitlements(user.id);
+    if (entitlements.maxAiImagesPerMonth <= 0) {
+      return NextResponse.json(
+        {
+          error: "AI Image Generation is only available on Pro and Plus plans. Please upgrade your subscription to generate images.",
+          code: "FEATURE_LOCKED",
+          feature: "ai_images",
+        },
+        { status: 403 }
+      );
+    }
+    if (usage.ai_images_generated >= entitlements.maxAiImagesPerMonth) {
+      return NextResponse.json(
+        {
+          error: `Monthly quota of ${entitlements.maxAiImagesPerMonth} AI images reached for ${entitlements.name} plan. Please upgrade to generate more images.`,
+          code: "QUOTA_EXCEEDED",
+          metric: "ai_images",
+          limit: entitlements.maxAiImagesPerMonth,
+          current: usage.ai_images_generated,
+        },
+        { status: 403 }
+      );
+    }
+
     const parsed = await parseJsonBody(req, ImageGenerateBody, { message: "Prompt is required" });
     if (!parsed.success) return parsed.response;
     const { prompt, style, aspectRatio, usePinterest } = parsed.data;
@@ -240,6 +266,9 @@ export async function POST(req: NextRequest) {
       console.error("Auto-save to library error:", saveErr);
       saveError = saveErr instanceof Error ? saveErr.message : "Failed to save to library";
     }
+
+    // Increment AI images usage counter
+    await incrementUsage(user.id, "ai_images", 1);
 
     return NextResponse.json({
       imageUrl: dataUrl,
