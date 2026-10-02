@@ -24,7 +24,10 @@ export default function WorkspaceSetupClient() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create workspace");
       setSuccess(`Workspace "${data.workspace.name}" created!`);
-      setTimeout(() => router.push("/team"), 1200);
+      setTimeout(() => {
+        router.push("/team");
+        router.refresh();
+      }, 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {

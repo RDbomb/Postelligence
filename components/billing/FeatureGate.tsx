@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, ReactNode } from "react";
-import { Lock, Sparkles, Loader2 } from "lucide-react";
+import { useState, ReactNode } from "react";
+import { Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PaywallModal } from "@/components/billing/PaywallModal";
-import type { TierEntitlements, TierId } from "@/lib/subscriptions/entitlements";
+import type { TierEntitlements } from "@/lib/subscriptions/entitlements";
+import { useSubscription } from "@/components/billing/SubscriptionContext";
 
 interface FeatureGateProps {
   feature: keyof TierEntitlements;
@@ -12,6 +13,7 @@ interface FeatureGateProps {
   requiredTier?: "pro" | "plus";
   description?: string;
   children: ReactNode;
+  initialAllowed?: boolean;
 }
 
 export function FeatureGate({
@@ -20,48 +22,27 @@ export function FeatureGate({
   requiredTier = "pro",
   description,
   children,
+  initialAllowed,
 }: FeatureGateProps) {
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const { entitlements } = useSubscription();
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    async function checkEntitlement() {
-      try {
-        const res = await fetch("/api/subscriptions/current");
-        if (!res.ok) {
-          setAllowed(false);
-          return;
-        }
-        const data = await res.json();
-        const entitlements = data.entitlements as TierEntitlements | undefined;
-        if (entitlements && typeof entitlements[feature] === "boolean") {
-          setAllowed(Boolean(entitlements[feature]));
-        } else {
-          setAllowed(false);
-        }
-      } catch {
-        setAllowed(false);
-      }
-    }
+  // If initialAllowed is explicitly passed (e.g. from server component), respect it.
+  // Otherwise, evaluate synchronously using cached entitlements from the client shell session context.
+  // Defaults to false (locked paywall) if unentitled / starter.
+  const isAllowed =
+    initialAllowed !== undefined
+      ? initialAllowed
+      : entitlements && typeof entitlements[feature] === "boolean"
+      ? Boolean(entitlements[feature])
+      : false;
 
-    checkEntitlement();
-  }, [feature]);
-
-  // Loading state
-  if (allowed === null) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-[#2f7867]" />
-      </div>
-    );
-  }
-
-  // Feature allowed: render content
-  if (allowed) {
+  // Feature allowed: render content immediately with zero delay
+  if (isAllowed) {
     return <>{children}</>;
   }
 
-  // Feature locked: render sleek paywall barrier card
+  // Feature locked: render sleek paywall barrier card immediately without any intermediate spinner
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2f7867]/10 text-[#2f7867] shadow-sm">

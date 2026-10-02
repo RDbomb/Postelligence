@@ -178,7 +178,13 @@ function accentClass(accent: string, type: "bg" | "text" | "border" | "ring") {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function AIStudioClient({ user }: { user: { email?: string | null; user_metadata?: Record<string, string> } }) {
+export default function AIStudioClient({
+  user,
+  initialAllowed,
+}: {
+  user: { email?: string | null; user_metadata?: Record<string, string> };
+  initialAllowed?: boolean;
+}) {
   const router = useRouter();
   const [activeToolId, setActiveToolId] = useState<AIMode>("caption");
   const [topic, setTopic] = useState("");
@@ -502,7 +508,12 @@ export default function AIStudioClient({ user }: { user: { email?: string | null
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
-        <FeatureGate feature="canAccessAiStudio" featureName="AI Studio" requiredTier="pro">
+        <FeatureGate
+          feature="canAccessAiStudio"
+          featureName="AI Studio"
+          requiredTier="pro"
+          initialAllowed={initialAllowed}
+        >
         {/* Tab switcher */}
         <div className="mb-6 flex gap-2">
           <button

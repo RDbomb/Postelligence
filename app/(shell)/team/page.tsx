@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/require-user";
-import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActionLabel, type WorkspaceAction } from "@/lib/workspace/activity-logger";
 import TeamClient from "./TeamClient";
+import WorkspaceSetupClient from "@/app/(shell)/workspace/WorkspaceSetupClient";
+import { FeatureGate } from "@/components/billing/FeatureGate";
+import { getUserEntitlements } from "@/lib/subscriptions/entitlements";
 import type { Workspace, WorkspaceInvite, WorkspaceRole } from "@/types";
 
 export const metadata: Metadata = {
   title: "Team",
   description: "Members, roles and workspace activity."
 };
-
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,24 @@ export default async function TeamPage(
 ) {
   const searchParams = await props.searchParams;
   const { supabase, user } = await requireUser();
-  const admin    = createAdminClient();
+  const { entitlements } = await getUserEntitlements(user.id);
+
+  // If unentitled (Starter/Free), render locked paywall immediately on /team without redirect
+  if (!entitlements.canAccessTeamWorkspaces) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
+        <FeatureGate
+          feature="canAccessTeamWorkspaces"
+          featureName="Team Workspaces"
+          requiredTier="pro"
+          description="Collaborate with team members, manage brand accounts collectively, and establish structured review workflows."
+          initialAllowed={false}
+        >
+          <div />
+        </FeatureGate>
+      </div>
+    );
+  }
 
   // Get membership
   const { data: membership } = await supabase
@@ -30,9 +48,16 @@ export default async function TeamPage(
     .eq("user_id", user.id)
     .single();
 
-  // Not in a workspace — redirect to setup
-  if (!membership) redirect("/workspace");
+  // Entitled user not yet in a workspace — render setup directly without redirect
+  if (!membership) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
+        <WorkspaceSetupClient />
+      </div>
+    );
+  }
 
+  const admin = createAdminClient();
   const workspace   = membership.workspace as Workspace;
   const currentRole = membership.role as WorkspaceRole;
 

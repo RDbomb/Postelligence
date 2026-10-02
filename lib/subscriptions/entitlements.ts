@@ -104,15 +104,43 @@ function getAdminClient() {
  * Handles lifetime access and grace periods.
  */
 export async function getUserSubscription(userId: string): Promise<UserSubscription> {
-  const supabase = getAdminClient();
-  const { data, error } = await supabase
-    .from("user_subscriptions")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
+  try {
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from("user_subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (error || !data) {
-    // Default to starter tier if no row exists yet
+    if (error || !data) {
+      // Default to starter tier if no row exists yet
+      return {
+        user_id: userId,
+        tier: "starter",
+        status: "free",
+        billing_type: "razorpay",
+        current_period_start: new Date().toISOString(),
+        current_period_end: null,
+        cancel_at_period_end: false,
+      };
+    }
+
+    // Check if paid subscription has expired (except lifetime / manual grants where end is null)
+    if (data.current_period_end) {
+      const expiresAt = new Date(data.current_period_end).getTime();
+      if (expiresAt < Date.now() && data.status === "active") {
+        // Grace period expired — downgrade tier to starter
+        return {
+          ...data,
+          tier: "starter",
+          status: "past_due",
+        };
+      }
+    }
+
+    return data as UserSubscription;
+  } catch (err) {
+    console.warn("Falling back to starter subscription due to error:", err);
     return {
       user_id: userId,
       tier: "starter",
@@ -123,35 +151,34 @@ export async function getUserSubscription(userId: string): Promise<UserSubscript
       cancel_at_period_end: false,
     };
   }
-
-  // Check if paid subscription has expired (except lifetime / manual grants where end is null)
-  if (data.current_period_end) {
-    const expiresAt = new Date(data.current_period_end).getTime();
-    if (expiresAt < Date.now() && data.status === "active") {
-      // Grace period expired — downgrade tier to starter
-      return {
-        ...data,
-        tier: "starter",
-        status: "past_due",
-      };
-    }
-  }
-
-  return data as UserSubscription;
 }
 
 /**
  * Reads current usage counters for the billing cycle.
  */
 export async function getUserUsage(userId: string): Promise<UserUsage> {
-  const supabase = getAdminClient();
-  const { data, error } = await supabase
-    .from("user_usage")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
+  try {
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from("user_usage")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (error || !data) {
+    if (error || !data) {
+      return {
+        user_id: userId,
+        scheduled_posts_count: 0,
+        automated_posts_count: 0,
+        ai_words_generated: 0,
+        ai_images_generated: 0,
+        period_start: new Date().toISOString(),
+      };
+    }
+
+    return data as UserUsage;
+  } catch (err) {
+    console.warn("Falling back to zero usage due to error:", err);
     return {
       user_id: userId,
       scheduled_posts_count: 0,
@@ -161,8 +188,6 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
       period_start: new Date().toISOString(),
     };
   }
-
-  return data as UserUsage;
 }
 
 /**
