@@ -6,6 +6,7 @@ import { createBlueskySession, fetchBlueskyProfile, BLUESKY_PLATFORM } from "@/l
 import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 
 /**
  * `handle` is a Bluesky handle (a DNS-style name such as `alice.bsky.social`),
@@ -56,13 +57,18 @@ export async function POST(request: Request) {
     }
   }
 
+  const quotaCheck = await assertCanConnectPlatform(user.id, "bluesky", workspaceId);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.error }, { status: 403 });
+  }
+
   try {
     const session = await createBlueskySession(handle, appPassword);
     const pdsHost = "pdsHost" in session && typeof session.pdsHost === "string" ? session.pdsHost : "bsky.social";
     const pdsUrl = `https://${pdsHost}`;
     const profile = await fetchBlueskyProfile(session.accessJwt, session.did, pdsUrl);
 
-    await upsertSocialAccount(supabase, {
+    const { error: upsertErr } = await upsertSocialAccount(supabase, {
       user_id: user.id,
       workspace_id: workspaceId || null,
       connected_by: user.id,
@@ -79,6 +85,10 @@ export async function POST(request: Request) {
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
+
+    if (upsertErr) {
+      return NextResponse.json({ error: upsertErr.message }, { status: 403 });
+    }
 
     return NextResponse.json({ ok: true, handle: profile.handle });
   } catch (error) {

@@ -7,6 +7,7 @@ import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
 import { readWorkspaceIdParam } from "@/lib/validation/oauth";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 
 /**
  * The stored webhook URL is later fetched AND posted to by the server
@@ -78,6 +79,14 @@ export async function GET(request: Request) {
     }
   }
 
+  const quotaCheck = await assertCanConnectPlatform(user.id, "discord", workspaceId);
+  if (!quotaCheck.allowed) {
+    const errorUrl = new URL(workspaceId ? "/team?tab=accounts" : "/integrations", requestUrl.origin);
+    errorUrl.searchParams.set("error", "limit_reached");
+    errorUrl.searchParams.set("message", quotaCheck.error || "Plan limit reached.");
+    return NextResponse.redirect(errorUrl);
+  }
+
   const state = crypto.randomUUID();
   try {
     const response = NextResponse.redirect(buildDiscordOAuthUrl(requestUrl.origin, state));
@@ -120,6 +129,11 @@ export async function POST(request: Request) {
     if (!membership || !canManageSocialAccounts(membership.role as WorkspaceRole)) {
       return NextResponse.json({ error: "Only the workspace Owner or a Manager can connect social accounts." }, { status: 403 });
     }
+  }
+
+  const quotaCheck = await assertCanConnectPlatform(user.id, "discord", workspaceId);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.error }, { status: 403 });
   }
 
   try {

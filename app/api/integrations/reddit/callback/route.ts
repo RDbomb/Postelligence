@@ -9,6 +9,7 @@ import {
   REDDIT_PLATFORM,
   REDDIT_SCOPES
 } from "@/lib/integrations/reddit";
+import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 
 export const dynamic = "force-dynamic";
 
@@ -51,30 +52,25 @@ export async function GET(request: Request) {
       ? redditUser.icon_img.split("?")[0]
       : null;
 
-    const { data: existing } = await supabase
-      .from("social_accounts")
-      .select("id, refresh_token")
-      .eq("user_id", user.id)
-      .eq("platform", REDDIT_PLATFORM)
-      .eq("account_id", redditUser.id)
-      .maybeSingle();
-
-    await supabase.from("social_accounts").upsert({
-      id: existing?.id,
+    const { error: upsertErr } = await upsertSocialAccount(supabase, {
       user_id: user.id,
       platform: REDDIT_PLATFORM,
       account_id: redditUser.id,
       account_name: redditUser.name,
       account_avatar_url: avatarUrl,
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || existing?.refresh_token || null,
+      refresh_token: tokens.refresh_token || null,
       token_expires_at: getRedditTokenExpiry(tokens.expires_in),
       scopes: tokens.scope?.split(" ") || REDDIT_SCOPES,
       status: "connected",
       metadata: { username: redditUser.name },
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }, { onConflict: "user_id,platform,account_id" });
+    });
+
+    if (upsertErr) {
+      return redirect("error", upsertErr.message);
+    }
 
     return redirect("connected");
   } catch (error) {

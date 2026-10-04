@@ -6,6 +6,7 @@ import { fetchTelegramBotInfo, fetchTelegramChatInfo, TELEGRAM_PLATFORM } from "
 import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 
@@ -73,6 +74,11 @@ export async function POST(request: Request) {
     if (!membership || !canManageSocialAccounts(membership.role as WorkspaceRole)) {
       return NextResponse.json({ error: "Only the workspace Owner or a Manager can connect social accounts." }, { status: 403 });
     }
+  }
+
+  const quotaCheck = await assertCanConnectPlatform(user.id, "telegram", workspaceId);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.error }, { status: 403 });
   }
 
   // ──── Step 1: Send Code via MTProto (Option 4) ────

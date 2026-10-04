@@ -8,6 +8,7 @@ import {
   TWITTER_PLATFORM,
   TWITTER_SCOPES,
 } from "@/lib/integrations/twitter";
+import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 
 export const dynamic = "force-dynamic";
 
@@ -49,16 +50,7 @@ export async function GET(request: Request) {
     const { accessToken, accessTokenSecret, userId, screenName } = await exchangeTwitterToken(oauthToken, oauthVerifier);
     const twitterUser = await fetchTwitterUser(accessToken, accessTokenSecret);
 
-    const { data: existing } = await supabase
-      .from("social_accounts")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("platform", TWITTER_PLATFORM)
-      .eq("account_id", userId)
-      .maybeSingle();
-
-    await supabase.from("social_accounts").upsert({
-      id: existing?.id,
+    const { error: upsertErr } = await upsertSocialAccount(supabase, {
       user_id: user.id,
       platform: TWITTER_PLATFORM,
       account_id: userId,
@@ -72,7 +64,11 @@ export async function GET(request: Request) {
       metadata: { username: screenName },
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id,platform,account_id" });
+    });
+
+    if (upsertErr) {
+      return redirect("error", upsertErr.message);
+    }
 
     return redirect("connected");
   } catch (error) {

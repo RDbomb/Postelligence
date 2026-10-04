@@ -14,6 +14,7 @@ export interface TierEntitlements {
   maxAiImagesPerMonth: number;
   maxWorkspaces: number;
   canAccessAiStudio: boolean;
+  canGenerateAiImages: boolean;
   canAccessAutomation: boolean;
   canAccessTeamWorkspaces: boolean;
   canExportReports: boolean;
@@ -30,7 +31,8 @@ export const TIER_CONFIG: Record<TierId, TierEntitlements> = {
     maxAiWordsPerMonth: 1000,
     maxAiImagesPerMonth: 0,
     maxWorkspaces: 0,
-    canAccessAiStudio: false,
+    canAccessAiStudio: true, // Free plan gets basic AI Studio access (text generation up to 1,000 words/mo)
+    canGenerateAiImages: false, // AI image generation is reserved for Pro and Plus tiers
     canAccessAutomation: false,
     canAccessTeamWorkspaces: false,
     canExportReports: false,
@@ -46,6 +48,7 @@ export const TIER_CONFIG: Record<TierId, TierEntitlements> = {
     maxAiImagesPerMonth: 25,
     maxWorkspaces: 1,
     canAccessAiStudio: true,
+    canGenerateAiImages: true,
     canAccessAutomation: true,
     canAccessTeamWorkspaces: true,
     canExportReports: true,
@@ -61,6 +64,7 @@ export const TIER_CONFIG: Record<TierId, TierEntitlements> = {
     maxAiImagesPerMonth: 150,
     maxWorkspaces: 5,
     canAccessAiStudio: true,
+    canGenerateAiImages: true,
     canAccessAutomation: true,
     canAccessTeamWorkspaces: true,
     canExportReports: true,
@@ -288,4 +292,63 @@ export async function setUserTier(params: {
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Validates whether a user can connect a new social platform based on their tier limits.
+ * Re-connecting or refreshing an existing connected platform is always permitted.
+ */
+export async function assertCanConnectPlatform(
+  userId: string,
+  platform: string,
+  workspaceId?: string | null,
+  accountId?: string | null
+): Promise<{ allowed: boolean; error?: string; currentCount: number; maxAllowed: number; tierName: string }> {
+  const { entitlements } = await getUserEntitlements(userId);
+  const supabase = getAdminClient();
+
+  let query = supabase
+    .from("social_accounts")
+    .select("id, platform, account_id, status")
+    .eq("user_id", userId);
+
+  if (workspaceId) {
+    query = query.eq("workspace_id", workspaceId);
+  } else {
+    query = query.is("workspace_id", null);
+  }
+
+  const { data: accounts } = await query;
+  const connectedAccounts = (accounts || []).filter((a) => a.status === "connected");
+
+  // If this platform (or specific account) is already connected, reconnecting/updating is permitted
+  const isAlreadyConnected = connectedAccounts.some(
+    (a) => (accountId && a.account_id === accountId) || a.platform === platform
+  );
+
+  if (isAlreadyConnected) {
+    return {
+      allowed: true,
+      currentCount: connectedAccounts.length,
+      maxAllowed: entitlements.maxConnectedPlatforms,
+      tierName: entitlements.name,
+    };
+  }
+
+  if (connectedAccounts.length >= entitlements.maxConnectedPlatforms) {
+    return {
+      allowed: false,
+      error: `You have reached the maximum limit of ${entitlements.maxConnectedPlatforms} connected platforms on the ${entitlements.name} plan. Upgrade your plan to connect more accounts.`,
+      currentCount: connectedAccounts.length,
+      maxAllowed: entitlements.maxConnectedPlatforms,
+      tierName: entitlements.name,
+    };
+  }
+
+  return {
+    allowed: true,
+    currentCount: connectedAccounts.length,
+    maxAllowed: entitlements.maxConnectedPlatforms,
+    tierName: entitlements.name,
+  };
 }

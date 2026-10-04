@@ -4,6 +4,7 @@ import { fetchPinterestUser, PINTEREST_PLATFORM } from "@/lib/integrations/pinte
 import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     if (!membership || !canManageSocialAccounts(membership.role as WorkspaceRole)) {
       return NextResponse.json({ error: "Only the workspace Owner or a Manager can connect social accounts." }, { status: 403 });
     }
+  }
+
+  const quotaCheck = await assertCanConnectPlatform(user.id, "pinterest", workspaceId);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.error }, { status: 403 });
   }
 
   try {

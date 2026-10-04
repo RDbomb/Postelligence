@@ -9,6 +9,7 @@ import {
   PINTEREST_PLATFORM,
   PINTEREST_SCOPES
 } from "@/lib/integrations/pinterest";
+import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 
 export const dynamic = "force-dynamic";
 
@@ -48,27 +49,25 @@ export async function GET(request: Request) {
 
     const accountId = pinterestUser.id || pinterestUser.username;
 
-    const { data: existing } = await supabase
-      .from("social_accounts").select("id, refresh_token")
-      .eq("user_id", user.id).eq("platform", PINTEREST_PLATFORM)
-      .eq("account_id", accountId).maybeSingle();
-
-    await supabase.from("social_accounts").upsert({
-      id: existing?.id,
+    const { error: upsertErr } = await upsertSocialAccount(supabase, {
       user_id: user.id,
       platform: PINTEREST_PLATFORM,
       account_id: accountId,
       account_name: pinterestUser.username,
       account_avatar_url: pinterestUser.profile_image || null,
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || existing?.refresh_token || null,
+      refresh_token: tokens.refresh_token || null,
       token_expires_at: getPinterestTokenExpiry(tokens.expires_in),
       scopes: tokens.scope?.split(" ") || PINTEREST_SCOPES,
       status: "connected",
       metadata: { username: pinterestUser.username },
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }, { onConflict: "user_id,platform,account_id" });
+    });
+
+    if (upsertErr) {
+      return redirect("error", upsertErr.message);
+    }
 
     return redirect("connected");
   } catch (error) {

@@ -9,6 +9,7 @@ import {
   LINKEDIN_PLATFORM,
   LINKEDIN_SCOPES
 } from "@/lib/integrations/linkedin";
+import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 
 export const dynamic = "force-dynamic";
 
@@ -46,27 +47,25 @@ export async function GET(request: Request) {
     const tokens = await exchangeLinkedInCode(requestUrl.origin, code);
     const linkedinUser = await fetchLinkedInUser(tokens.access_token);
 
-    const { data: existing } = await supabase
-      .from("social_accounts").select("id, refresh_token")
-      .eq("user_id", user.id).eq("platform", LINKEDIN_PLATFORM)
-      .eq("account_id", linkedinUser.sub).maybeSingle();
-
-    await supabase.from("social_accounts").upsert({
-      id: existing?.id,
+    const { error: upsertErr } = await upsertSocialAccount(supabase, {
       user_id: user.id,
       platform: LINKEDIN_PLATFORM,
       account_id: linkedinUser.sub,
       account_name: linkedinUser.name || `${linkedinUser.given_name || ""} ${linkedinUser.family_name || ""}`.trim(),
       account_avatar_url: linkedinUser.picture || null,
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || existing?.refresh_token || null,
+      refresh_token: tokens.refresh_token || null,
       token_expires_at: getLinkedInTokenExpiry(tokens.expires_in),
       scopes: tokens.scope?.split(" ") || LINKEDIN_SCOPES,
       status: "connected",
       metadata: { email: linkedinUser.email },
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }, { onConflict: "user_id,platform,account_id" });
+    });
+
+    if (upsertErr) {
+      return redirect("error", upsertErr.message);
+    }
 
     return redirect("connected");
   } catch (error) {

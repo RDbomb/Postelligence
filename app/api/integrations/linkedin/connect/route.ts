@@ -4,6 +4,7 @@ import { buildLinkedInOAuthUrl } from "@/lib/integrations/linkedin";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
 import { readWorkspaceIdParam } from "@/lib/validation/oauth";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,14 @@ export async function GET(request: Request) {
       redirectUrl.searchParams.set("message", "Only the workspace Owner or a Manager can connect social accounts.");
       return NextResponse.redirect(redirectUrl);
     }
+  }
+
+  const quotaCheck = await assertCanConnectPlatform(user.id, "linkedin", workspaceId);
+  if (!quotaCheck.allowed) {
+    const errorUrl = new URL(workspaceId ? "/team" : "/integrations", requestUrl.origin);
+    errorUrl.searchParams.set("error", "limit_reached");
+    errorUrl.searchParams.set("message", quotaCheck.error || "Plan limit reached.");
+    return NextResponse.redirect(errorUrl);
   }
 
   try {

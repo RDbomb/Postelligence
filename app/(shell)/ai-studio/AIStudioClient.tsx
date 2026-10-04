@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +26,7 @@ import {
   Compass,
 } from "lucide-react";
 import { FeatureGate } from "@/components/billing/FeatureGate";
+import { useSubscription } from "@/components/billing/SubscriptionContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -179,13 +180,13 @@ function accentClass(accent: string, type: "bg" | "text" | "border" | "ring") {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AIStudioClient({
-  user,
   initialAllowed,
 }: {
-  user: { email?: string | null; user_metadata?: Record<string, string> };
+  user?: { email?: string | null; user_metadata?: Record<string, string> };
   initialAllowed?: boolean;
 }) {
   const router = useRouter();
+  const { entitlements } = useSubscription();
   const [activeToolId, setActiveToolId] = useState<AIMode>("caption");
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState("");
@@ -501,19 +502,21 @@ export default function AIStudioClient({
               <WandSparkles className="h-5 w-5 text-fuchsia-600" />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight text-gray-900">AI Studio</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black tracking-tight text-gray-900">AI Studio</h1>
+                {entitlements && (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600 border border-slate-200">
+                    {entitlements.name} Plan: {entitlements.maxAiWordsPerMonth.toLocaleString()} words/mo
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Generate viral captions, hashtags, hooks, and content ideas with AI.</p>
             </div>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
-        <FeatureGate
-          feature="canAccessAiStudio"
-          featureName="AI Studio"
-          requiredTier="pro"
-          initialAllowed={initialAllowed}
-        >
         {/* Tab switcher */}
         <div className="mb-6 flex gap-2">
           <button
@@ -537,6 +540,9 @@ export default function AIStudioClient({
           >
             <ImageIcon className="h-4 w-4" />
             Image Generator
+            <span className="text-[9px] font-black uppercase tracking-wider text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5">
+              PRO
+            </span>
           </button>
           <button
             onClick={() => {
@@ -796,9 +802,16 @@ export default function AIStudioClient({
 
           {activeTab === "image" && (
             /* ── Image Generator Tab ── */
-            <motion.div
-              key="image"
-              initial={{ opacity: 0, y: 12 }}
+            <FeatureGate
+              feature="canGenerateAiImages"
+              featureName="AI Image Generator"
+              requiredTier="pro"
+              initialAllowed={initialAllowed}
+              description="Create high-resolution AI visuals, artwork, and banners for your posts. Upgrade to Pro (25 images/month) or Plus (150 images/month) to unlock AI image generation."
+            >
+              <motion.div
+                key="image"
+                initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
@@ -979,6 +992,7 @@ export default function AIStudioClient({
                 </AnimatePresence>
               </div>
             </motion.div>
+            </FeatureGate>
           )}
 
           {activeTab === "trends" && (
@@ -1288,7 +1302,6 @@ export default function AIStudioClient({
             </motion.div>
           )}
         </AnimatePresence>
-        </FeatureGate>
       </div>
     </div>
   );

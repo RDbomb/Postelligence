@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
+import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 
 // Migration 012 replaced the single table-wide unique constraint on
 // social_accounts with two *partial* unique indexes:
@@ -30,15 +31,36 @@ export async function upsertSocialAccount(
   const workspaceId = record.workspace_id ?? null;
 
   const ownerFilter = workspaceId
-    ? supabase.from("social_accounts").select("id").eq("workspace_id", workspaceId)
-    : supabase.from("social_accounts").select("id").eq("user_id", record.user_id).is("workspace_id", null);
+    ? supabase.from("social_accounts").select("id, status").eq("workspace_id", workspaceId)
+    : supabase.from("social_accounts").select("id, status").eq("user_id", record.user_id).is("workspace_id", null);
 
   const { data: existing } = await ownerFilter
     .eq("platform", record.platform)
     .eq("account_id", record.account_id)
     .maybeSingle();
 
-  const { id: _ignoredId, ...fields } = record as Record<string, unknown> & { id?: unknown };
+  // If this account doesn't exist or wasn't already connected, verify subscription tier limit
+  if (!existing?.id || existing.status !== "connected") {
+    try {
+      const quotaCheck = await assertCanConnectPlatform(
+        record.user_id,
+        record.platform,
+        workspaceId,
+        record.account_id
+      );
+      if (!quotaCheck.allowed) {
+        return {
+          data: null,
+          error: new Error(quotaCheck.error || "Connected platforms limit reached for your plan."),
+        };
+      }
+    } catch (quotaErr) {
+      console.warn("Could not check subscription quota in upsertSocialAccount:", quotaErr);
+    }
+  }
+
+  const fields = { ...(record as Record<string, unknown>) };
+  delete fields.id;
 
   if (existing?.id) {
     return supabase.from("social_accounts").update(fields).eq("id", existing.id as string);

@@ -1,16 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MoreHorizontal, Plus, X, Check, Loader2,
   WifiOff, Zap, Shield, RefreshCw, ExternalLink,
-  Globe, Sparkles, Activity
+  Globe, Sparkles, Activity, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PLATFORM_CONFIG } from "@/types";
+import { useSubscription } from "@/components/billing/SubscriptionContext";
+import { PaywallModal } from "@/components/billing/PaywallModal";
 import type { SocialAccount } from "@/lib/integrations/social-accounts";
 import {
   getConnectedFacebookAccount,
@@ -142,22 +144,7 @@ function PlatformAvatar({ platform, size = "lg" }: { platform: Platform; size?: 
   );
 }
 
-// ── Animated connection line decoration ─────────────────────────────────────
-function _ConnectionDot({ connected }: { connected: boolean }) {
-  return (
-    <div className="relative flex items-center gap-1.5">
-      <span
-        className={cn(
-          "h-2 w-2 rounded-full transition-colors duration-500",
-          connected ? "bg-emerald-400" : "bg-slate-300"
-        )}
-      />
-      {connected && (
-        <span className="absolute h-2 w-2 rounded-full bg-emerald-400 animate-ping opacity-75" />
-      )}
-    </div>
-  );
-}
+
 
 // ── Mini platform icon for the hero mosaic ───────────────────────────────────
 function MosaicIcon({ platform, delay }: { platform: Platform; delay: number }) {
@@ -184,13 +171,14 @@ function PlatformCard({
   onDisconnect,
   isDisconnecting,
   index,
+  isLimitReached,
 }: {
-
   platform: Platform;
   onConnect: () => void;
   onDisconnect: () => void;
   isDisconnecting: boolean;
   index: number;
+  isLimitReached?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -410,7 +398,7 @@ function PlatformCard({
             className="w-full flex items-center justify-center gap-1.5 rounded-xl font-bold text-xs py-2.5 transition-all duration-200 hover:opacity-90 hover:shadow-md active:scale-[0.98] shadow-sm mt-1"
             style={{ background: platform.bgGradient, color: "#ffffff" }}
           >
-            <Plus className="h-3.5 w-3.5" />
+            {isLimitReached ? <Lock className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
             Connect {platform.name}
           </button>
         )}
@@ -422,6 +410,15 @@ function PlatformCard({
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntegrationsClient({ socialAccounts }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { entitlements } = useSubscription();
+  const maxConnected = entitlements?.maxConnectedPlatforms ?? 4;
+
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [dismissedUrlError, setDismissedUrlError] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState("Connected Platforms");
+  const [paywallDescription, setPaywallDescription] = useState("");
+
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [blueskyModalOpen, setBlueskyModalOpen] = useState(false);
   const [blueskyHandle, setBlueskyHandle] = useState("");
@@ -587,8 +584,19 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   ];
 
   const connectedCount = platforms.filter(p => p.connected).length;
+  const isLimitReached = connectedCount >= maxConnected;
   const totalCount = platforms.length;
   const connectedPercent = Math.round((connectedCount / totalCount) * 100);
+
+  const urlLimitError = searchParams.get("error") === "limit_reached";
+  const urlMessage = searchParams.get("message");
+  const isPaywallOpen = paywallOpen || (urlLimitError && !dismissedUrlError);
+  const activePaywallFeature = urlLimitError && !paywallOpen ? "Connected Platforms" : paywallFeature;
+  const activePaywallDescription =
+    urlLimitError && !paywallOpen
+      ? (urlMessage ||
+          `You have reached the maximum of ${maxConnected} connected platforms on the ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`)
+      : paywallDescription;
 
   const filteredPlatforms = platforms.filter(p => {
     if (activeFilter === "connected") return p.connected;
@@ -597,6 +605,13 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   });
 
   const connectPinterest = async () => {
+    if (isLimitReached) {
+      setPinterestError(`Plan limit reached: maximum ${maxConnected} platforms on ${entitlements?.name || "Starter"} plan.`);
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(`You have reached the limit of ${maxConnected} connected platforms on the ${entitlements?.name || "Starter"} plan. Upgrade to connect more accounts.`);
+      setPaywallOpen(true);
+      return;
+    }
     if (!pinterestAccessToken.trim()) {
       setPinterestError("Please enter your Pinterest Access Token.");
       return;
@@ -629,6 +644,14 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   };
 
   const handleConnect = (platform: Platform) => {
+    if (!platform.connected && isLimitReached) {
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(
+        `You have connected ${connectedCount} of ${maxConnected} platforms allowed on the ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`
+      );
+      setPaywallOpen(true);
+      return;
+    }
     if (platform.id === "bluesky") {
       setBlueskyError(null);
       setBlueskyModalOpen(true);
@@ -686,6 +709,13 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   };
 
   const connectBluesky = async () => {
+    if (isLimitReached) {
+      setBlueskyError(`Plan limit reached: maximum ${maxConnected} platforms on ${entitlements?.name || "Starter"} plan.`);
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(`You have connected ${connectedCount} of ${maxConnected} platforms allowed on your ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`);
+      setPaywallOpen(true);
+      return;
+    }
     if (!blueskyHandle.trim() || !blueskyAppPassword.trim()) {
       setBlueskyError("Enter both your handle and app password.");
       return;
@@ -715,6 +745,13 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   };
 
   const connectDiscord = async () => {
+    if (isLimitReached) {
+      setDiscordError(`Plan limit reached: maximum ${maxConnected} platforms on ${entitlements?.name || "Starter"} plan.`);
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(`You have connected ${connectedCount} of ${maxConnected} platforms allowed on your ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`);
+      setPaywallOpen(true);
+      return;
+    }
     if (!discordWebhookUrl.trim()) {
       setDiscordError("Enter your Discord Webhook URL.");
       return;
@@ -746,6 +783,13 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   };
 
   const sendTelegramCode = async () => {
+    if (isLimitReached) {
+      setTelegramError(`Plan limit reached: maximum ${maxConnected} platforms on ${entitlements?.name || "Starter"} plan.`);
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(`You have connected ${connectedCount} of ${maxConnected} platforms allowed on your ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`);
+      setPaywallOpen(true);
+      return;
+    }
     if (!telegramPhoneNumber.trim()) {
       setTelegramError("Please enter your Telegram phone number with country code (e.g. +1234567890).");
       return;
@@ -809,6 +853,13 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
   };
 
   const connectTelegramBot = async () => {
+    if (isLimitReached) {
+      setTelegramError(`Plan limit reached: maximum ${maxConnected} platforms on ${entitlements?.name || "Starter"} plan.`);
+      setPaywallFeature("Connected Platforms");
+      setPaywallDescription(`You have connected ${connectedCount} of ${maxConnected} platforms allowed on your ${entitlements?.name || "Starter"} plan. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`);
+      setPaywallOpen(true);
+      return;
+    }
     if (!telegramBotToken.trim() || !telegramChatId.trim()) {
       setTelegramError("Enter both your Bot Token and Chat/Channel ID.");
       return;
@@ -944,17 +995,24 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 leading-none">Connected</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 leading-none">Connected</p>
+                    {isLimitReached && (
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+                        Limit Reached
+                      </span>
+                    )}
+                  </div>
                   <p className="text-2xl font-black text-slate-900 mt-1 leading-none">
                     {connectedCount}
-                    <span className="text-sm font-bold text-slate-400 ml-1">/ {totalCount}</span>
+                    <span className="text-sm font-bold text-slate-400 ml-1">/ {maxConnected}</span>
                   </p>
                   <p className="text-[10px] text-slate-400 font-medium mt-1">
                     {connectedCount === 0
                       ? "Connect your first account →"
-                      : connectedCount === totalCount
-                      ? "All platforms connected 🎉"
-                      : `${totalCount - connectedCount} more available`}
+                      : isLimitReached
+                      ? `${entitlements?.name || "Starter"} plan limit reached (max ${maxConnected})`
+                      : `${maxConnected - connectedCount} platform slot${maxConnected - connectedCount === 1 ? "" : "s"} left`}
                   </p>
                 </div>
               </div>
@@ -998,6 +1056,37 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
 
       {/* ── Platform Cards Grid ──────────────────────────────────────────────── */}
       <div className="px-6 md:px-10 py-8">
+        {isLimitReached && (
+          <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                <Lock className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-amber-900">
+                  Platform Connection Limit Reached ({connectedCount}/{maxConnected})
+                </h4>
+                <p className="text-xs text-amber-700">
+                  Your {entitlements?.name || "Starter"} plan allows up to {maxConnected} connected platforms. Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => {
+                setPaywallFeature("Connected Platforms");
+                setPaywallDescription(
+                  `Upgrade to Pro to connect up to 8 platforms, or Plus for unlimited platforms!`
+                );
+                setPaywallOpen(true);
+              }}
+              className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm"
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1" />
+              Upgrade to Pro
+            </Button>
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           {filteredPlatforms.length === 0 ? (
             <motion.div
@@ -1068,6 +1157,7 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
                     onConnect={() => handleConnect(platform)}
                     onDisconnect={() => void handleDisconnect(platform)}
                     isDisconnecting={disconnectingPlatform === platform.id}
+                    isLimitReached={isLimitReached}
                   />
                 );
               })}
@@ -1594,6 +1684,17 @@ export default function IntegrationsClient({ socialAccounts }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => {
+          setPaywallOpen(false);
+          setDismissedUrlError(true);
+        }}
+        featureName={activePaywallFeature}
+        description={activePaywallDescription}
+        requiredTier="pro"
+      />
     </div>
   );
 }

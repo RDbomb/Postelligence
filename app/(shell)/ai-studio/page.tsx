@@ -20,7 +20,7 @@ export default async function AIStudioPage() {
         email: user.email,
         user_metadata: user.user_metadata as Record<string, string>,
       }}
-      initialAllowed={entitlements.canAccessAiStudio}
+      initialAllowed={entitlements.canGenerateAiImages}
     />
   );
 }
