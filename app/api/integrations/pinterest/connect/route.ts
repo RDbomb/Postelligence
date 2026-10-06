@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildPinterestOAuthUrl } from "@/lib/integrations/pinterest";
+import { buildPinterestOAuthUrl, IS_PINTEREST_LOCKED } from "@/lib/integrations/pinterest";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
+
+  if (IS_PINTEREST_LOCKED) {
+    const redirectUrl = new URL("/integrations", requestUrl.origin);
+    redirectUrl.searchParams.set("pinterest", "error");
+    redirectUrl.searchParams.set("message", "Pinterest integration is currently locked and coming soon.");
+    return NextResponse.redirect(redirectUrl);
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 

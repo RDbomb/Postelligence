@@ -7,7 +7,8 @@ import {
   fetchPinterestUser,
   getPinterestTokenExpiry,
   PINTEREST_PLATFORM,
-  PINTEREST_SCOPES
+  PINTEREST_SCOPES,
+  IS_PINTEREST_LOCKED,
 } from "@/lib/integrations/pinterest";
 import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 
@@ -15,6 +16,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
+
+  if (IS_PINTEREST_LOCKED) {
+    const url = new URL("/integrations", requestUrl.origin);
+    url.searchParams.set("pinterest", "error");
+    url.searchParams.set("message", "Pinterest integration is currently locked and coming soon.");
+    return NextResponse.redirect(url);
+  }
   // Validated and bounded; an invalid value reads as null so the existing
   // "missing OAuth data" redirect below handles it exactly as before.
   const { code, state, error: oauthError } = readOAuthCallbackParams(requestUrl);

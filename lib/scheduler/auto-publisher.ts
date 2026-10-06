@@ -492,7 +492,12 @@ async function requirePublishedId(res: Response, label: string) {
   return id;
 }
 
+import { IS_PINTEREST_LOCKED } from "@/lib/integrations/pinterest";
+
 async function publishPinterest(account: StoredAccount, text: string, mediaUrl: string): Promise<string | undefined> {
+  if (IS_PINTEREST_LOCKED) {
+    throw new Error("Pinterest publishing is currently locked and coming soon.");
+  }
   let boardId = (account.metadata?.board_id || account.metadata?.default_board_id) as string | undefined;
   if (!boardId) {
     try {

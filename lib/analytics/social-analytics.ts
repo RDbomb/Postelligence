@@ -1,5 +1,7 @@
 import type { ScheduledPost } from "@/types";
 import { refreshYouTubeAccessToken } from "@/lib/integrations/youtube";
+import { fetchDiscordWebhookInfo } from "@/lib/integrations/discord";
+import { IS_PINTEREST_LOCKED } from "@/lib/integrations/pinterest";
 
 export type AnalyticsAccount = {
   id: string;
@@ -140,14 +142,6 @@ function getPlatformResult(post: ScheduledPost, platform: string) {
   return getPlatformResults(post).find((result) => result.platform === platform) || null;
 }
 
-// Matches live-fetched posts against this account's own scheduledPosts, to
-// scope analytics down to "posted through this app/workspace" instead of an
-// account's entire live history. Prefers an exact platform post-id match
-// (post.platform_results[].id), but falls back to a time-proximity match for
-// older/legacy scheduled_posts rows that don't have a recorded id — some
-// historical rows were saved through a compatibility fallback that drops
-// platform_results entirely (see the publish route's legacyHistoryRow path),
-// and treating those as "no match" would wrongly zero out real, valid posts.
 export type ScheduledPostMatcher = { ids: Set<string>; fallbackTimestamps: number[] };
 const MATCH_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -213,11 +207,13 @@ function platformLabel(platform: string) {
     facebook: "Facebook",
     linkedin: "LinkedIn",
     youtube: "YouTube",
-    twitter: "X",
+    twitter: "X (Twitter)",
     threads: "Threads",
     bluesky: "Bluesky",
     pinterest: "Pinterest",
     reddit: "Reddit",
+    telegram: "Telegram",
+    discord: "Discord",
   };
   return labels[platform] || platform;
 }
@@ -233,6 +229,8 @@ function platformStyle(platform: string) {
     bluesky: { color: "#1185FE", tone: "bg-cyan-50 text-cyan-700 border-cyan-100" },
     pinterest: { color: "#E60023", tone: "bg-rose-50 text-rose-700 border-rose-100" },
     reddit: { color: "#FF4500", tone: "bg-orange-50 text-orange-700 border-orange-100" },
+    telegram: { color: "#229ED9", tone: "bg-sky-50 text-sky-800 border-sky-100" },
+    discord: { color: "#5865F2", tone: "bg-indigo-50 text-indigo-700 border-indigo-100" },
   };
   return styles[platform] || { color: "#2f7867", tone: "bg-emerald-50 text-emerald-700 border-emerald-100" };
 }
@@ -317,11 +315,6 @@ function summarizePosts(
   followers: number | null = fallback.followers,
   matcher?: ScheduledPostMatcher | null
 ): PlatformAnalytics {
-  // Team Analytics passes `matcher` (built from this workspace's own
-  // scheduled_posts) so a shared account's live post history doesn't pull in
-  // posts made outside this app/workspace — e.g. through someone's personal
-  // composer, or directly on the platform. Solo Analytics calls this without
-  // `matcher`, so its behavior is unchanged (full account history).
   const scoped = matcher ? posts.filter((post) => matchesScheduledPost(post, matcher)) : posts;
 
   const likes = addNullable(scoped.map((post) => post.likes));
@@ -385,22 +378,51 @@ function isLinkedInPermissionError(error: unknown) {
 }
 
 async function fetchYouTube(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
-  let accessToken = account.access_token || "";
+  let accessToken = account.access_token || (account.metadata?.access_token as string) || "";
   if ((!accessToken || (account.token_expires_at && new Date(account.token_expires_at) <= new Date())) && account.refresh_token) {
-    const refreshed = await refreshYouTubeAccessToken(account.refresh_token);
-    accessToken = refreshed.access_token;
+    try {
+      const refreshed = await refreshYouTubeAccessToken(account.refresh_token);
+      accessToken = refreshed.access_token;
+    } catch {
+      // Best effort refresh
+    }
   }
 
   if (!accessToken) return { ...fallback, message: "YouTube needs a valid access token.", status: "error" };
 
   const headers = { Authorization: `Bearer ${accessToken}` };
-  const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
-  channelUrl.searchParams.set("part", "statistics,contentDetails");
-  channelUrl.searchParams.set("id", account.account_id);
-  const channelJson = await readJson(channelUrl.toString(), { headers });
+  let channelJson: Record<string, unknown> | null = null;
+
+  try {
+    const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+    channelUrl.searchParams.set("part", "statistics,contentDetails");
+    channelUrl.searchParams.set("id", account.account_id);
+    channelJson = await readJson(channelUrl.toString(), { headers });
+
+    if (!Array.isArray(channelJson.items) || channelJson.items.length === 0) {
+      const mineUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+      mineUrl.searchParams.set("part", "statistics,contentDetails");
+      mineUrl.searchParams.set("mine", "true");
+      channelJson = await readJson(mineUrl.toString(), { headers });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("quota") || msg.includes("403")) {
+      return {
+        ...fallback,
+        fetched: true,
+        status: fallback.recentPosts.length ? "partial" : "error",
+        message: fallback.recentPosts.length
+          ? `Loaded ${fallback.recentPosts.length} locally published YouTube videos. YouTube Data API quota limit reached.`
+          : "YouTube Data API quota limit reached. Live stats will refresh once quota resets.",
+      };
+    }
+    throw err;
+  }
+
   const channel = ((channelJson.items as unknown[]) || [])[0] as Record<string, unknown> | undefined;
   const stats = (channel?.statistics || {}) as Record<string, unknown>;
-  const followers = asNumber(stats.subscriberCount);
+  const followers = asNumber(stats.subscriberCount) ?? fallback.followers;
   const uploads = ((channel?.contentDetails as Record<string, unknown> | undefined)?.relatedPlaylists as Record<string, unknown> | undefined)?.uploads;
 
   let videoIds: string[] = [];
@@ -453,11 +475,12 @@ async function fetchYouTube(account: AnalyticsAccount, fallback: PlatformAnalyti
 }
 
 async function fetchFacebook(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
-  if (!account.access_token) return { ...fallback, message: "Facebook needs a Page access token.", status: "error" };
+  const accessToken = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!accessToken) return { ...fallback, message: "Facebook needs a Page access token.", status: "error" };
 
   const pageUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${account.account_id}`);
   pageUrl.searchParams.set("fields", "fan_count,followers_count");
-  pageUrl.searchParams.set("access_token", account.access_token);
+  pageUrl.searchParams.set("access_token", accessToken);
 
   let followers = fallback.followers;
   try {
@@ -467,13 +490,10 @@ async function fetchFacebook(account: AnalyticsAccount, fallback: PlatformAnalyt
     followers = fallback.followers;
   }
 
-  // Request only safe fields — insights.metric() causes error #100 on accounts
-  // without pages_read_engagement approval, so we skip it here and fetch
-  // per-post insights separately in a silent try/catch below.
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${account.account_id}/published_posts`);
   url.searchParams.set("fields", "id,message,permalink_url,created_time,shares,comments.summary(true).limit(0),likes.summary(true).limit(0)");
   url.searchParams.set("limit", "25");
-  url.searchParams.set("access_token", account.access_token);
+  url.searchParams.set("access_token", accessToken);
 
   let json: Record<string, unknown>;
   try {
@@ -498,16 +518,15 @@ async function fetchFacebook(account: AnalyticsAccount, fallback: PlatformAnalyt
     const postId = String(record.id || "");
     let reach: number | null = null;
 
-    // Try to fetch per-post reach silently — fails gracefully if permission is missing
-    if (postId && account.access_token) {
+    if (postId && accessToken) {
       try {
         const insightsUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${postId}/insights`);
         insightsUrl.searchParams.set("metric", "post_impressions_unique");
-        insightsUrl.searchParams.set("access_token", account.access_token);
+        insightsUrl.searchParams.set("access_token", accessToken);
         const insightJson = await readJson(insightsUrl.toString());
         reach = graphInsightValue(insightJson, ["post_impressions_unique", "post_impressions"]);
       } catch {
-        // No insights permission — reach stays null, rest of post data still shows
+        // Silent fallback
       }
     }
 
@@ -528,14 +547,27 @@ async function fetchFacebook(account: AnalyticsAccount, fallback: PlatformAnalyt
 }
 
 async function fetchInstagram(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
-  if (!account.access_token) return { ...fallback, message: "Instagram needs a Page access token.", status: "error" };
+  const accessToken = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!accessToken) return { ...fallback, message: "Instagram needs a Page access token.", status: "error" };
 
   const isDirectLogin = account.metadata?.login_type === "instagram";
   const host = isDirectLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
+
+  let followers: number | null = fallback.followers;
+  try {
+    const profileUrl = new URL(`${host}/${GRAPH_VERSION}/${account.account_id}`);
+    profileUrl.searchParams.set("fields", "followers_count,follows_count,media_count,username");
+    profileUrl.searchParams.set("access_token", accessToken);
+    const profileJson = await readJson(profileUrl.toString());
+    followers = asNumber(profileJson.followers_count) ?? fallback.followers;
+  } catch {
+    followers = fallback.followers;
+  }
+
   const url = new URL(`${host}/${GRAPH_VERSION}/${account.account_id}/media`);
   url.searchParams.set("fields", "id,caption,permalink,timestamp,like_count,comments_count");
   url.searchParams.set("limit", "25");
-  url.searchParams.set("access_token", account.access_token);
+  url.searchParams.set("access_token", accessToken);
   const json = await readJson(url.toString());
   const posts = await Promise.all(((json.data as unknown[]) || []).map(async (item) => {
     const record = item as Record<string, unknown>;
@@ -545,12 +577,12 @@ async function fetchInstagram(account: AnalyticsAccount, fallback: PlatformAnaly
     try {
       const insightsUrl = new URL(`${host}/${GRAPH_VERSION}/${record.id}/insights`);
       insightsUrl.searchParams.set("metric", "reach,impressions,shares,total_interactions");
-      insightsUrl.searchParams.set("access_token", account.access_token || "");
+      insightsUrl.searchParams.set("access_token", accessToken);
       const insightJson = await readJson(insightsUrl.toString());
       reach = graphInsightValue(insightJson, ["reach", "impressions"]);
       shares = graphInsightValue(insightJson, ["shares"]);
     } catch {
-      // Likes/comments are still useful even when the account lacks insights permission.
+      // Insights fallback
     }
 
     return {
@@ -566,16 +598,28 @@ async function fetchInstagram(account: AnalyticsAccount, fallback: PlatformAnaly
     };
   }));
 
-  return summarizePosts("instagram", posts, fallback, undefined, matcher);
+  return summarizePosts("instagram", posts, fallback, followers, matcher);
 }
 
 async function fetchThreads(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
-  if (!account.access_token) return { ...fallback, message: "Threads needs an access token.", status: "error" };
+  const accessToken = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!accessToken) return { ...fallback, message: "Threads needs an access token.", status: "error" };
+
+  let followers: number | null = fallback.followers;
+  try {
+    const meUrl = new URL(`https://graph.threads.net/v1.0/me`);
+    meUrl.searchParams.set("fields", "id,username,threads_profile_picture_url,followers_count");
+    meUrl.searchParams.set("access_token", accessToken);
+    const meJson = await readJson(meUrl.toString());
+    followers = asNumber(meJson.followers_count) ?? fallback.followers;
+  } catch {
+    followers = fallback.followers;
+  }
 
   const url = new URL(`https://graph.threads.net/v1.0/${account.account_id}/threads`);
   url.searchParams.set("fields", "id,text,timestamp,permalink,like_count,reply_count,repost_count,quote_count,views");
   url.searchParams.set("limit", "25");
-  url.searchParams.set("access_token", account.access_token);
+  url.searchParams.set("access_token", accessToken);
   const json = await readJson(url.toString());
   const posts = ((json.data as unknown[]) || []).map((item) => {
     const record = item as Record<string, unknown>;
@@ -592,7 +636,7 @@ async function fetchThreads(account: AnalyticsAccount, fallback: PlatformAnalyti
     };
   });
 
-  return summarizePosts("threads", posts, fallback, undefined, matcher);
+  return summarizePosts("threads", posts, fallback, followers, matcher);
 }
 
 async function fetchBluesky(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
@@ -607,7 +651,7 @@ async function fetchBluesky(account: AnalyticsAccount, fallback: PlatformAnalyti
   let followers: number | null = fallback.followers;
   try {
     const profileJson = await readJson(profileUrl.toString());
-    followers = asNumber(profileJson.followersCount);
+    followers = asNumber(profileJson.followersCount) ?? fallback.followers;
   } catch {
     followers = fallback.followers;
   }
@@ -632,14 +676,21 @@ async function fetchBluesky(account: AnalyticsAccount, fallback: PlatformAnalyti
 }
 
 async function fetchLinkedIn(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
-  if (!account.access_token) return { ...fallback, message: "LinkedIn needs an access token.", status: "error" };
+  const accessToken = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!accessToken) return { ...fallback, message: "LinkedIn needs an access token.", status: "error" };
 
   const headers = {
-    Authorization: `Bearer ${account.access_token}`,
+    Authorization: `Bearer ${accessToken}`,
     "LinkedIn-Version": LINKEDIN_VERSION,
     "X-Restli-Protocol-Version": "2.0.0",
   };
-  const author = `urn:li:person:${account.account_id}`;
+
+  let author = account.account_id;
+  if (!author.startsWith("urn:li:")) {
+    const isOrg = account.metadata?.is_organization || account.metadata?.organization_id;
+    author = isOrg ? `urn:li:organization:${account.metadata?.organization_id || account.account_id}` : `urn:li:person:${account.account_id}`;
+  }
+
   const url = new URL("https://api.linkedin.com/rest/posts");
   url.searchParams.set("q", "author");
   url.searchParams.set("author", author);
@@ -657,7 +708,7 @@ async function fetchLinkedIn(account: AnalyticsAccount, fallback: PlatformAnalyt
       likes = getNestedNumber(social, ["aggregatedTotalLikes", "totalLikes"]);
       comments = getNestedNumber(social, ["aggregatedTotalComments", "totalFirstLevelComments", "totalComments"]);
     } catch {
-      // Some LinkedIn apps can list posts but cannot access social action summaries.
+      // Social actions fallback
     }
 
     return {
@@ -672,7 +723,175 @@ async function fetchLinkedIn(account: AnalyticsAccount, fallback: PlatformAnalyt
     };
   }));
 
-  return summarizePosts("linkedin", posts, fallback, undefined, matcher);
+  return summarizePosts("linkedin", posts, fallback, fallback.followers, matcher);
+}
+
+async function fetchTwitter(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
+  const token = account.access_token || (account.metadata?.access_token as string) || "";
+  let followers: number | null = fallback.followers;
+
+  if (token) {
+    try {
+      const meUrl = new URL("https://api.twitter.com/2/users/me");
+      meUrl.searchParams.set("user.fields", "public_metrics");
+      const meJson = await readJson(meUrl.toString(), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const metrics = (meJson.data as Record<string, unknown> | undefined)?.public_metrics as Record<string, unknown> | undefined;
+      if (metrics) {
+        followers = asNumber(metrics.followers_count) ?? fallback.followers;
+      }
+    } catch {
+      // Twitter API fallback
+    }
+  }
+
+  return summarizePosts("twitter", fallback.recentPosts, fallback, followers, matcher);
+}
+
+async function fetchPinterest(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
+  if (IS_PINTEREST_LOCKED) {
+    return {
+      ...fallback,
+      status: "unavailable",
+      fetched: true,
+      message: "Pinterest integration is currently locked and coming soon.",
+    };
+  }
+
+  const token = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!token) return summarizePosts("pinterest", fallback.recentPosts, fallback, fallback.followers, matcher);
+
+  let followers: number | null = fallback.followers;
+  let posts: AnalyticsPost[] = fallback.recentPosts;
+
+  try {
+    const userRes = await readJson("https://api.pinterest.com/v5/user_account", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    followers = asNumber(userRes.follower_count) ?? fallback.followers;
+  } catch {
+    // Pinterest account fallback
+  }
+
+  try {
+    const pinsRes = await readJson("https://api.pinterest.com/v5/pins?bookmark=0&page_size=25", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const items = Array.isArray(pinsRes.items) ? pinsRes.items : [];
+    if (items.length > 0) {
+      posts = items.map((item) => {
+        const record = item as Record<string, unknown>;
+        const pinMetrics = (record.pin_metrics || record.metrics || {}) as Record<string, unknown>;
+        const id = String(record.id || "");
+        return {
+          id,
+          title: String(record.title || record.description || "Pinterest Pin").slice(0, 90),
+          url: id ? `https://www.pinterest.com/pin/${id}/` : undefined,
+          createdAt: typeof record.created_at === "string" ? record.created_at : undefined,
+          platform: "pinterest",
+          likes: asNumber(pinMetrics.save_count) ?? asNumber(pinMetrics.saves),
+          comments: asNumber(pinMetrics.comment_count) ?? asNumber(pinMetrics.comments),
+          shares: null,
+          reach: asNumber(pinMetrics.impression_count) ?? asNumber(pinMetrics.impressions),
+        };
+      });
+    }
+  } catch {
+    // Pins fallback
+  }
+
+  return summarizePosts("pinterest", posts, fallback, followers, matcher);
+}
+
+async function fetchReddit(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
+  const token = account.access_token || (account.metadata?.access_token as string) || "";
+  if (!token) return summarizePosts("reddit", fallback.recentPosts, fallback, fallback.followers, matcher);
+
+  let karma: number | null = fallback.followers;
+  let posts: AnalyticsPost[] = fallback.recentPosts;
+  let username = account.account_name;
+
+  try {
+    const meJson = await readJson("https://oauth.reddit.com/api/v1/me", {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Postelligence/1.0" }
+    });
+    karma = asNumber(meJson.total_karma) ?? asNumber(meJson.link_karma) ?? fallback.followers;
+    if (typeof meJson.name === "string") username = meJson.name;
+  } catch {
+    // Reddit me fallback
+  }
+
+  if (username) {
+    try {
+      const submittedJson = await readJson(`https://oauth.reddit.com/user/${username}/submitted?limit=25`, {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": "Postelligence/1.0" }
+      });
+      const children = Array.isArray((submittedJson.data as Record<string, unknown> | undefined)?.children)
+        ? ((submittedJson.data as Record<string, unknown>).children as Record<string, unknown>[])
+        : [];
+      if (children.length > 0) {
+        posts = children.map((c) => {
+          const record = (c.data || {}) as Record<string, unknown>;
+          const id = String(record.id || "");
+          const permalink = typeof record.permalink === "string" ? `https://reddit.com${record.permalink}` : undefined;
+          const createdUtc = typeof record.created_utc === "number" ? new Date(record.created_utc * 1000).toISOString() : undefined;
+          return {
+            id,
+            title: String(record.title || "Reddit post").slice(0, 90),
+            url: permalink,
+            createdAt: createdUtc,
+            platform: "reddit",
+            likes: asNumber(record.score) ?? asNumber(record.ups),
+            comments: asNumber(record.num_comments),
+            shares: null,
+            reach: asNumber(record.view_count),
+          };
+        });
+      }
+    } catch {
+      // Submissions fallback
+    }
+  }
+
+  return summarizePosts("reddit", posts, fallback, karma, matcher);
+}
+
+async function fetchTelegram(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
+  const botToken = account.access_token || (account.metadata?.bot_token as string) || (account.metadata?.access_token as string) || "";
+  const chatId = account.account_id || (account.metadata?.chat_id as string) || "";
+  let followers: number | null = fallback.followers;
+
+  if (botToken && chatId) {
+    try {
+      const countRes = await readJson(`https://api.telegram.org/bot${botToken}/getChatMemberCount?chat_id=${encodeURIComponent(chatId)}`);
+      if (countRes.ok && typeof countRes.result === "number") {
+        followers = countRes.result;
+      }
+    } catch {
+      // Telegram member count fallback
+    }
+  }
+
+  return summarizePosts("telegram", fallback.recentPosts, fallback, followers, matcher);
+}
+
+async function fetchDiscord(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
+  const webhookUrl = (account.metadata?.webhook_url as string) || account.access_token || "";
+  const followers: number | null = fallback.followers;
+
+  if (webhookUrl && webhookUrl.startsWith("http")) {
+    try {
+      const info = await fetchDiscordWebhookInfo(webhookUrl);
+      if (info.guildName) {
+        fallback.accountName = `${info.guildName} #${info.channelName || "channel"}`;
+      }
+    } catch {
+      // Discord info fallback
+    }
+  }
+
+  return summarizePosts("discord", fallback.recentPosts, fallback, followers, matcher);
 }
 
 async function fetchPlatform(account: AnalyticsAccount, fallback: PlatformAnalytics, matcher?: ScheduledPostMatcher | null): Promise<PlatformAnalytics> {
@@ -683,6 +902,11 @@ async function fetchPlatform(account: AnalyticsAccount, fallback: PlatformAnalyt
     if (account.platform === "threads") return await fetchThreads(account, fallback, matcher);
     if (account.platform === "bluesky") return await fetchBluesky(account, fallback, matcher);
     if (account.platform === "linkedin") return await fetchLinkedIn(account, fallback, matcher);
+    if (account.platform === "twitter") return await fetchTwitter(account, fallback, matcher);
+    if (account.platform === "pinterest") return await fetchPinterest(account, fallback, matcher);
+    if (account.platform === "reddit") return await fetchReddit(account, fallback, matcher);
+    if (account.platform === "telegram") return await fetchTelegram(account, fallback, matcher);
+    if (account.platform === "discord") return await fetchDiscord(account, fallback, matcher);
     return { ...fallback, message: `${fallback.name} analytics are not supported by this app yet.` };
   } catch (error) {
     if (account.platform === "linkedin" && isLinkedInPermissionError(error)) {

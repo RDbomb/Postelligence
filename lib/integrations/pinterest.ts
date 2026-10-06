@@ -1,5 +1,8 @@
 export const PINTEREST_PLATFORM = "pinterest";
 
+// Single toggle to lock/unlock Pinterest across the entire application
+export const IS_PINTEREST_LOCKED = true;
+
 export const PINTEREST_SCOPES = [
   "boards:read",
   "boards:write",
