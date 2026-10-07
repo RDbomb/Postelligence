@@ -49,6 +49,8 @@ export interface ScheduledPost {
   }> | null;
 }
 
+import { IS_PINTEREST_LOCKED } from "@/lib/integrations/pinterest";
+
 export type PlatformAvailability = {
   id: string;
   name: string;
@@ -87,8 +89,8 @@ export const PLATFORM_CONFIG: PlatformAvailability[] = [
   {
     id: "pinterest",
     name: "Pinterest",
-    available: false,
-    comingSoonReason: "Pinterest integration is awaiting developer approval.",
+    available: !IS_PINTEREST_LOCKED,
+    comingSoonReason: "Pinterest integration is currently locked and coming soon.",
   },
   {
     id: "reddit",

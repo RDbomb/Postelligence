@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/require-user";
 import type { SocialAccount } from "@/lib/integrations/social-accounts";
-import { getLocalSocialAccounts } from "@/lib/integrations/local-social-accounts";
+import { getLocalSocialAccountsWithTokens } from "@/lib/integrations/local-social-accounts";
 import type { ScheduledPost, WorkspaceRole } from "@/types";
 import { getAnalyticsDashboard, type AnalyticsAccount } from "@/lib/analytics/social-analytics";
 import { readAnalyticsCache, writeAnalyticsCache } from "@/lib/analytics/analytics-cache";
@@ -17,7 +17,11 @@ export const dynamic = "force-dynamic";
 
 function sanitizeMetadata(metadata: Record<string, unknown> | null) {
   if (!metadata) return metadata;
-  const { access_token: _a, refresh_token: _r, appPassword: _ap, app_password: _aps, ...safeMetadata } = metadata;
+  const safeMetadata = { ...metadata };
+  delete safeMetadata.access_token;
+  delete safeMetadata.refresh_token;
+  delete safeMetadata.appPassword;
+  delete safeMetadata.app_password;
   return safeMetadata;
 }
 
@@ -43,7 +47,7 @@ export default async function AnalyticsPage() {
     supabase.from("workspace_members").select("*, workspace:workspaces(id, name)").eq("user_id", user.id).single(),
   ]);
 
-  const localSocialAccounts = socialAccountsError ? await getLocalSocialAccounts(user.id) : [];
+  const localSocialAccounts = socialAccountsError ? await getLocalSocialAccountsWithTokens(user.id) : [];
   const accounts = (socialAccountsError ? localSocialAccounts : socialAccounts || []) as AnalyticsAccount[];
   const posts = (scheduledPosts || []) as ScheduledPost[];
 
@@ -63,10 +67,14 @@ export default async function AnalyticsPage() {
 
   const workspace: { id: string; name: string } | null = membership?.workspace ?? null;
 
-  const publicAccounts = accounts.map(({ access_token: _a, refresh_token: _r, token_expires_at: _t, ...account }) => ({
-    ...account,
-    metadata: sanitizeMetadata(account.metadata),
-  })) as SocialAccount[];
+  const publicAccounts = accounts.map((account) => {
+    const { access_token: _, refresh_token: __, token_expires_at: ___, ...rest } = account;
+    void _; void __; void ___;
+    return {
+      ...rest,
+      metadata: sanitizeMetadata(account.metadata),
+    };
+  }) as SocialAccount[];
 
   return (
     <AnalyticsClient

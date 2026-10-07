@@ -10,7 +10,7 @@ import {
 import {
   Activity, BarChart3, CheckCircle2, Eye, Heart, MessageCircle,
   PieChart as PieIcon, RadioTower, Lock, RefreshCw, Share2, Trophy,
-  TrendingUp, Users, Zap,
+  TrendingUp, Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -108,9 +108,12 @@ function LineChartTooltip({ active, payload, label }: Partial<TooltipContentProp
 type PlatformRow = { platform: string; status: string; message: string; name: string };
 
 const PERMISSION_ISSUES: Record<string, { title: string; explanation: string; action: string | null; docsUrl: string | null }> = {
-  linkedin: { title: "LinkedIn analytics not available", explanation: "LinkedIn has closed the r_member_social permission to new apps, which means no third-party tool can read post likes or comments via the API right now. This is a LinkedIn platform restriction — not a Postelligence issue. Publishing still works perfectly.", action: null, docsUrl: null },
+  linkedin: { title: "LinkedIn analytics restricted", explanation: "LinkedIn has closed the r_member_social permission to new apps, so third-party tools cannot read member post engagement via API. Publishing and post counts work normally.", action: null, docsUrl: null },
   facebook: { title: "Meta analytics permissions required", explanation: "Reading post engagement on Facebook requires the pages_read_user_content permission, which needs Meta's business verification and app review.", action: "Start Meta app review", docsUrl: "https://developers.facebook.com/docs/permissions/reference/pages_read_user_content" },
   instagram: { title: "Meta analytics permissions required", explanation: "Instagram post insights require pages_read_user_content and a Business or Creator account. Personal accounts cannot access reach or engagement data via the API.", action: "Start Meta app review", docsUrl: "https://developers.facebook.com/docs/permissions/reference/pages_read_user_content" },
+  twitter: { title: "X (Twitter) API access level", explanation: "Twitter API v2 metrics require authorized OAuth user permissions or elevated API access. Published post history is safely tracked.", action: "View X Developer Portal", docsUrl: "https://developer.x.com" },
+  pinterest: { title: "Pinterest Trial Access", explanation: "Pinterest trial access tokens restrict direct profile metrics API calls. Published pin metrics are synced.", action: "View Pinterest Portal", docsUrl: "https://developers.pinterest.com" },
+  reddit: { title: "Reddit API identity access", explanation: "Reddit OAuth requires identity scope approval to fetch live account karma and submitted post metrics.", action: null, docsUrl: null },
 };
 
 function PlatformMessage({ row }: { row: PlatformRow }) {
@@ -208,7 +211,7 @@ export default function AnalyticsClient({
   }, [cacheStale, triggerBackgroundRefresh]);
 
   type TrendRange = "7D" | "1M" | "3M" | "1Y" | "All";
-  type PostsFilter = "all" | "bluesky" | "youtube" | "linkedin" | "instagram" | "facebook" | "threads";
+  type PostsFilter = "all" | "bluesky" | "youtube" | "linkedin" | "instagram" | "facebook" | "threads" | "twitter" | "pinterest" | "reddit" | "telegram" | "discord";
   type PostsPeriod = "recent" | "1D" | "1W" | "1M" | "1Y";
 
   const [trendRange, setTrendRange] = useState<TrendRange>("All");
@@ -236,7 +239,7 @@ export default function AnalyticsClient({
   const totalPosts = posts.length;
   const syncedPlatforms = rows.filter((r) => r.fetched).length;
   const totalRecentPosts = rows.reduce((s, r) => s + r.recentPosts.length, 0);
-  const recentPosts = rows.flatMap((r) => r.recentPosts).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 8);
+  const [nowTimestamp] = useState(() => Date.now());
   const postPerformance = analytics.totals.postPerformance;
   const maxPosts = Math.max(1, ...rows.map((r) => r.posts));
   const allRecentPosts = rows.flatMap((r) => r.recentPosts);
@@ -246,18 +249,32 @@ export default function AnalyticsClient({
 
   const barData = rows.filter((r) => r.likes !== null || r.comments !== null || r.shares !== null || r.reach !== null).map((r) => ({ name: r.name, color: r.color, Likes: r.likes ?? 0, Comments: r.comments ?? 0, Shares: r.shares ?? 0, Views: r.reach ?? 0 }));
   const pieData = rows.filter((r) => r.posts > 0).map((r) => ({ name: r.name, value: r.posts, color: r.color }));
-  const lineData = [...recentPosts].reverse().map((post, i) => { const platformRow = rows.find((r) => r.platform === post.platform); return { name: `#${i + 1}`, title: post.title.slice(0, 38) + (post.title.length > 38 ? "…" : ""), platform: platformRow?.name ?? post.platform, platformColor: platformRow?.color ?? "#2f7867", Likes: post.likes ?? 0, Comments: post.comments ?? 0, Shares: post.shares ?? 0, Views: post.reach ?? 0, url: post.url }; });
   const trendRangeDays: Record<string, number | null> = { "7D": 7, "1M": 30, "3M": 90, "1Y": 365, "All": null };
+  const allRecentPostsSorted = [...allRecentPosts].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
   const filteredLineData = (() => {
     const days = trendRangeDays[trendRange];
-    if (!days) return lineData;
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-    return [...recentPosts].reverse().filter((post) => !post.createdAt || new Date(post.createdAt) >= cutoff).map((post, i) => { const platformRow = rows.find((r) => r.platform === post.platform); return { name: `#${i + 1}`, title: post.title.slice(0, 38) + (post.title.length > 38 ? "…" : ""), platform: platformRow?.name ?? post.platform, platformColor: platformRow?.color ?? "#2f7867", Likes: post.likes ?? 0, Comments: post.comments ?? 0, Shares: post.shares ?? 0, Views: post.reach ?? 0, url: post.url }; });
+    const postsToDisplay = days
+      ? allRecentPostsSorted.filter((post) => !post.createdAt || new Date(post.createdAt).getTime() >= (nowTimestamp - days * 86400000))
+      : allRecentPostsSorted;
+    return postsToDisplay.slice(-25).map((post, i) => {
+      const platformRow = rows.find((r) => r.platform === post.platform);
+      return {
+        name: `#${i + 1}`,
+        title: post.title.slice(0, 38) + (post.title.length > 38 ? "…" : ""),
+        platform: platformRow?.name ?? post.platform,
+        platformColor: platformRow?.color ?? "#2f7867",
+        Likes: post.likes ?? 0,
+        Comments: post.comments ?? 0,
+        Shares: post.shares ?? 0,
+        Views: post.reach ?? 0,
+        url: post.url,
+      };
+    });
   })();
   const postsPeriodDays: Record<string, number | null> = { "recent": null, "1D": 1, "1W": 7, "1M": 30, "1Y": 365 };
   const periodFilteredPosts = (() => { const days = postsPeriodDays[postsPeriod]; if (!days) return allRecentPosts; const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days); return allRecentPosts.filter((p) => !p.createdAt || new Date(p.createdAt) >= cutoff); })();
   const filteredRecentPosts = (postsFilter === "all" ? periodFilteredPosts : periodFilteredPosts.filter((p) => p.platform === postsFilter)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 20);
-  const PLATFORM_COLORS: Record<string, string> = { instagram: "#E1306C", facebook: "#1877F2", linkedin: "#0A66C2", youtube: "#FF0000", twitter: "#111827", threads: "#111827", bluesky: "#1185FE", pinterest: "#E60023", reddit: "#FF4500" };
+  const PLATFORM_COLORS: Record<string, string> = { instagram: "#E1306C", facebook: "#1877F2", linkedin: "#0A66C2", youtube: "#FF0000", twitter: "#111827", threads: "#111827", bluesky: "#1185FE", pinterest: "#E60023", reddit: "#FF4500", telegram: "#229ED9", discord: "#5865F2" };
   const postPlatformOptions = [{ value: "all" as PostsFilter, label: "All", color: undefined as string | undefined }, ...connectedAccounts.map((acc) => { const row = rows.find((r) => r.platform === acc.platform); return { value: acc.platform as PostsFilter, label: row?.name ?? acc.platform, color: row?.color ?? PLATFORM_COLORS[acc.platform] }; })];
   const metricCards = [
     { label: "Post Performance", value: formatPercent(postPerformance), sub: `${publishedPosts}/${totalPosts} posts published`, icon: BarChart3, tone: "bg-emerald-50 text-emerald-700", hasData: postPerformance !== null },

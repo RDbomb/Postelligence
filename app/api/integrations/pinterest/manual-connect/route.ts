@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchPinterestUser, PINTEREST_PLATFORM } from "@/lib/integrations/pinterest";
+import { fetchPinterestUser, PINTEREST_PLATFORM, IS_PINTEREST_LOCKED } from "@/lib/integrations/pinterest";
 import { upsertSocialAccount } from "@/lib/integrations/upsert-social-account";
 import { canManageSocialAccounts } from "@/lib/workspace/permissions";
 import type { WorkspaceRole } from "@/types";
@@ -9,6 +9,10 @@ import { assertCanConnectPlatform } from "@/lib/subscriptions/entitlements";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  if (IS_PINTEREST_LOCKED) {
+    return NextResponse.json({ error: "Pinterest integration is currently locked and coming soon." }, { status: 403 });
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 

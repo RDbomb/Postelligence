@@ -3,10 +3,9 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseOptionalJsonBody } from "@/lib/validation/http";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getLocalSocialAccounts } from "@/lib/integrations/local-social-accounts";
+import { getLocalSocialAccountsWithTokens } from "@/lib/integrations/local-social-accounts";
 import { getAnalyticsDashboard, type AnalyticsAccount } from "@/lib/analytics/social-analytics";
 import {
-  readAnalyticsCache,
   writeAnalyticsCache,
   markCacheRefreshing,
   invalidateAnalyticsCache,
@@ -66,7 +65,7 @@ export async function POST(request: Request) {
       .is("workspace_id", null);
 
     const localSocialAccounts = socialAccountsError
-      ? await getLocalSocialAccounts(user.id)
+      ? await getLocalSocialAccountsWithTokens(user.id)
       : [];
 
     const { data: scheduledPosts } = await supabase

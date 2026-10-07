@@ -98,7 +98,28 @@ export async function getLocalSocialAccounts(userId: string): Promise<SocialAcco
 
   return accounts
     .filter((account) => account.user_id === userId)
-    .map(({ user_id: _userId, access_token: _accessToken, refresh_token: _refreshToken, token_expires_at: _tokenExpiresAt, ...account }) => account);
+    .map((item) => {
+      const { user_id, access_token, refresh_token, token_expires_at, ...account } = item;
+      void user_id; void access_token; void refresh_token; void token_expires_at;
+      return account;
+    });
+}
+
+export async function getLocalSocialAccountsWithTokens(userId: string): Promise<SocialAccount[]> {
+  const accounts = await readStore();
+
+  return accounts
+    .filter((account) => account.user_id === userId)
+    .map((item) => {
+      const { user_id, access_token, refresh_token, token_expires_at, ...account } = item;
+      void user_id;
+      return {
+        ...account,
+        access_token: decrypt(access_token),
+        refresh_token: decrypt(refresh_token),
+        token_expires_at,
+      };
+    });
 }
 
 export async function saveLocalYouTubeAccount(input: SaveYouTubeAccountInput) {
